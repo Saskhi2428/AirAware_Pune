@@ -1,0 +1,54 @@
+name: airaware
+description: Pune Air Quality & Personal Exposure Intelligence Platform
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Backend
+  supabase_flutter: ^2.6.0
+  http: ^1.2.2
+
+  # Map — flutter_map + OpenStreetMap tiles: no API key required, avoids
+  # forcing you to set up billing on Google Maps before Phase 8 is verified.
+  # Can be swapped for google_maps_flutter later behind the same MapWidget API.
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # Charts
+  fl_chart: ^0.69.0
+
+  # Routing
+  go_router: ^14.2.7
+
+  # Env / config
+  flutter_dotenv: ^5.1.0
+
+  # Utilities
+  intl: ^0.19.0
+  geolocator: ^13.0.1
+
+  # Premium typography — Manrope for a distinctive, modern feel instead of
+  # the default system font, which is what was making earlier screens look
+  # like a generic template rather than a designed product.
+  google_fonts: ^6.2.1
+  share_plus: ^12.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env

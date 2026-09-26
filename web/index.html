@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AirAware Pune — Real-Time Air Quality & Exposure Intelligence</title>
+  
+  <!-- PWA & Mobile Meta Tags -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0F172A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AirAware Pune">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%2310B981'/><text x='50' y='65' font-size='44' font-weight='bold' text-anchor='middle' fill='white'>AQ</text></svg>">
+  
+  <!-- Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS for Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- Tailwind CSS CDN for utility classes -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+            heading: ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            },
+            aqi: {
+              good: '#10B981',
+              satisfactory: '#84CC16',
+              moderate: '#F59E0B',
+              poor: '#F97316',
+              verypoor: '#EF4444',
+              severe: '#7F1D1D',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans transition-colors duration-300 antialiased selection:bg-emerald-500/30 selection:text-emerald-300">
+
+  <!-- Top Navigation Header -->
+  <header class="sticky top-0 z-40 backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/80 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center gap-3 cursor-pointer" onclick="switchTab('dashboard')">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-lg shadow-emerald-500/20 flex items-center justify-center">
+          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+            <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-heading font-extrabold text-xl tracking-tight bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">AirAware</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Pune</span>
+          </div>
+          <p class="text-[11px] text-slate-400 hidden sm:block">Environmental Intelligence & Exposure Engine</p>
+        </div>
+      </div>
+
+      <!-- Desktop Nav Tabs -->
+      <nav class="hidden md:flex items-center gap-1 bg-slate-900/60 p-1.5 rounded-2xl border border-slate-800/60">
+        <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-link active px-4 py-2 rounded-xl text-sm font-semibold transition-all">
+          Dashboard
+        </button>
+        <button onclick="switchTab('map')" id="nav-map" class="nav-link px-4 py-2 rounded-xl text-sm font-semibold transition-all text-slate-400 hover:text-slate-200">
+          Live Map
+        </button>
+        <button onclick="switchTab('leaderboard')" id="nav-leaderboard" class="nav-link px-4 py-2 rounded-xl text-sm font-semibold transition-all text-slate-400 hover:text-slate-200">
+          Leaderboard
+        </button>
+        <button onclick="switchTab('route')" id="nav-route" class="nav-link px-4 py-2 rounded-xl text-sm font-semibold transition-all text-slate-400 hover:text-slate-200">
+          Safe Commute
+        </button>
+        <button onclick="switchTab('tracker')" id="nav-tracker" class="nav-link px-4 py-2 rounded-xl text-sm font-semibold transition-all text-slate-400 hover:text-slate-200">
+          Exposure Tracker
+        </button>
+        <button onclick="switchTab('watch')" id="nav-watch" class="nav-link px-4 py-2 rounded-xl text-sm font-semibold transition-all text-slate-400 hover:text-slate-200">
+          AirWatch
+        </button>
+      </nav>
+
+      <!-- Right Actions: Realtime status, Theme, Install -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- Live pulse -->
+        <div class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium" id="live-indicator">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+          <span class="hidden sm:inline">LIVE</span>
+          <span id="last-update-time" class="text-[11px] text-slate-400 font-mono">Synced</span>
+        </div>
+
+        <!-- Refresh Button -->
+        <button onclick="refreshData()" title="Sync real-time data" class="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white transition">
+          <svg id="refresh-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+        </button>
+
+        <!-- Theme Toggle -->
+        <button onclick="toggleTheme()" title="Toggle Dark/Light mode" class="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white transition">
+          <svg id="theme-icon-sun" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+          </svg>
+          <svg id="theme-icon-moon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+          </svg>
+        </button>
+
+        <!-- PWA Install Button (Mobile & Desktop) -->
+        <button id="pwa-install-btn" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/30 transition">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          <span>Install App</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-10">
+
+    <!-- VIEW 1: DASHBOARD -->
+    <section id="view-dashboard" class="tab-view space-y-6">
+      
+      <!-- Top Alert Banner (if high pollution) -->
+      <div id="city-alert-banner" class="hidden p-4 rounded-2xl border flex items-start gap-3 transition">
+        <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <div class="flex-1 text-sm">
+          <span class="font-bold block" id="alert-banner-title">Pune Air Advisory</span>
+          <span id="alert-banner-msg">Loading current advisory...</span>
+        </div>
+      </div>
+
+      <!-- Hero Grid: Speedometer Gauge + Pune Microclimate Weather -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Hero Card: Real-Time Speedometer AQI Meter (7 cols) -->
+        <div class="lg:col-span-7 rounded-3xl bg-slate-900/80 border border-slate-800/80 p-6 sm:p-8 backdrop-blur-xl relative overflow-hidden flex flex-col justify-between shadow-xl">
+          <div class="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none"></div>
+          
+          <div class="flex items-start justify-between relative z-10">
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-400">Pune City Average NAQI</h2>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">CPCB Standards</span>
+              </div>
+              <p class="text-2xl sm:text-3xl font-heading font-extrabold text-white mt-1">Pune Metropolitan Region</p>
+              <p class="text-xs text-slate-400 mt-0.5" id="hero-stations-count">Aggregating 25 official PMC, PCMC & IITM SAFAR stations</p>
+            </div>
+            
+            <div id="hero-category-badge" class="px-3.5 py-1.5 rounded-full text-xs font-extrabold tracking-wide uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              Satisfactory
+            </div>
+          </div>
+
+          <!-- Circular Speedometer SVG Gauge -->
+          <div class="my-6 flex flex-col items-center justify-center relative z-10">
+            <div class="relative w-64 h-36 flex items-center justify-center">
+              <svg class="w-64 h-36 overflow-visible" viewBox="0 0 200 110">
+                <!-- Gauge Background Arc -->
+                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#1E293B" stroke-width="18" stroke-linecap="round" />
+                <!-- Dynamic Colored Progress Arc -->
+                <path id="gauge-arc" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#10B981" stroke-width="18" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="150" class="transition-all duration-1000 ease-out" />
+              </svg>
+              <!-- Center AQI Value -->
+              <div class="absolute bottom-2 flex flex-col items-center">
+                <span class="text-5xl sm:text-6xl font-heading font-black tracking-tighter" id="hero-aqi-value">82</span>
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-widest -mt-1">AQI Index</span>
+              </div>
+            </div>
+
+            <!-- Indian CPCB Breakpoint Bar Indicator -->
+            <div class="w-full max-w-sm mt-4 grid grid-cols-6 gap-1 text-center">
+              <div class="flex flex-col items-center"><div class="w-full h-1.5 rounded bg-emerald-500"></div><span class="text-[9px] text-slate-400 mt-1">0-50</span></div>
+              <div class="flex flex-col items-center"><div class="w-full h-1.5 rounded bg-lime-500"></div><span class="text-[9px] text-slate-400 mt-1">51-100</span></div>
+              <div class="flex flex-col items-center"><div class="w-full h-1.5 rounded bg-amber-500"></div><span class="text-[9px] text-slate-400 mt-1">101-200</span></div>
+              <div class="flex flex-col items-center"><div class="w-full h-1.5 rounded bg-orange-500"></div><span class="text-[9px] text-slate-400 mt-1">201-300</span></div>
+              <div class="flex flex-col items-center"><div class="w-full h-1.5 rounded bg-red-500"></div><span class="text-[9px] text-slate-400 mt-1">301-400</span></div>
+              <div class="flex flex-col items-center"><div class="w-full h-1.5 rounded bg-red-900"></div><span class="text-[9px] text-slate-400 mt-1">401+</span></div>
+            </div>
+          </div>
+
+          <!-- Bottom Pollutants Sub-Index Strip -->
+          <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-4 border-t border-slate-800/80 relative z-10" id="pollutant-mini-grid">
+            <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60 text-center">
+              <span class="text-[10px] text-slate-400 font-semibold block">PM2.5</span>
+              <span class="text-sm font-bold text-white" id="val-pm25">34.2</span>
+              <span class="text-[9px] text-slate-500 block">µg/m³</span>
+            </div>
+            <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60 text-center">
+              <span class="text-[10px] text-slate-400 font-semibold block">PM10</span>
+              <span class="text-sm font-bold text-white" id="val-pm10">68.5</span>
+              <span class="text-[9px] text-slate-500 block">µg/m³</span>
+            </div>
+            <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60 text-center">
+              <span class="text-[10px] text-slate-400 font-semibold block">NO2</span>
+              <span class="text-sm font-bold text-white" id="val-no2">28.1</span>
+              <span class="text-[9px] text-slate-500 block">µg/m³</span>
+            </div>
+            <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60 text-center">
+              <span class="text-[10px] text-slate-400 font-semibold block">SO2</span>
+              <span class="text-sm font-bold text-white" id="val-so2">11.4</span>
+              <span class="text-[9px] text-slate-500 block">µg/m³</span>
+            </div>
+            <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60 text-center">
+              <span class="text-[10px] text-slate-400 font-semibold block">CO</span>
+              <span class="text-sm font-bold text-white" id="val-co">0.9</span>
+              <span class="text-[9px] text-slate-500 block">mg/m³</span>
+            </div>
+            <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60 text-center">
+              <span class="text-[10px] text-slate-400 font-semibold block">O3</span>
+              <span class="text-sm font-bold text-white" id="val-o3">32.0</span>
+              <span class="text-[9px] text-slate-500 block">µg/m³</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right Column: Pune Microclimate & Cleanest/Polluted Spots (5 cols) -->
+        <div class="lg:col-span-5 flex flex-col gap-6">
+          
+          <!-- Live Pune Weather Card -->
+          <div class="rounded-3xl bg-slate-900/80 border border-slate-800/80 p-6 backdrop-blur-xl shadow-xl flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-xs font-bold uppercase tracking-wider text-teal-400">Pune Microclimate & Dispersion</span>
+                <h3 class="text-lg font-heading font-bold text-white mt-0.5">Atmospheric Conditions</h3>
+              </div>
+              <div class="w-10 h-10 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 00-9.78 2.096A4.001 4.001 0 003 15z"></path>
+                </svg>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 my-4">
+              <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                <span class="text-[11px] text-slate-400 block">Temperature</span>
+                <span class="text-lg font-bold text-white" id="weather-temp">26.5°C</span>
+                <span class="text-[10px] text-emerald-400 block">Pune Valley</span>
+              </div>
+              <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                <span class="text-[11px] text-slate-400 block">Humidity</span>
+                <span class="text-lg font-bold text-white" id="weather-humidity">62%</span>
+                <span class="text-[10px] text-slate-500 block">Relative</span>
+              </div>
+              <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                <span class="text-[11px] text-slate-400 block">Wind Speed</span>
+                <span class="text-lg font-bold text-white" id="weather-wind">12 km/h</span>
+                <span class="text-[10px] text-teal-400 block" id="weather-dir">WSW 240°</span>
+              </div>
+              <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                <span class="text-[11px] text-slate-400 block">UV Index</span>
+                <span class="text-lg font-bold text-white" id="weather-uv">Moderate</span>
+                <span class="text-[10px] text-amber-400 block">Level 4</span>
+              </div>
+            </div>
+
+            <div class="text-xs text-slate-400 bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/40 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-teal-400"></span>
+              <span>Dispersion Factor: Moderate westerly breeze aiding Mutha river corridor ventilation.</span>
+            </div>
+          </div>
+
+          <!-- Locality Extremes (Cleanest vs Most Polluted) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Cleanest Spot -->
+            <div class="rounded-2xl bg-emerald-950/30 border border-emerald-500/30 p-4 flex flex-col justify-between cursor-pointer hover:border-emerald-500 transition" onclick="switchTab('leaderboard')">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Cleanest Locality</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono" id="cleanest-aqi">AQI 52</span>
+              </div>
+              <div class="mt-2">
+                <p class="font-heading font-bold text-white text-base" id="cleanest-name">Pashan (IITM)</p>
+                <p class="text-xs text-emerald-400/80">Residential & Green Reserve</p>
+              </div>
+            </div>
+
+            <!-- Most Polluted Spot -->
+            <div class="rounded-2xl bg-amber-950/30 border border-amber-500/30 p-4 flex flex-col justify-between cursor-pointer hover:border-amber-500 transition" onclick="switchTab('leaderboard')">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400">Highest Exposure</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono" id="polluted-aqi">AQI 117</span>
+              </div>
+              <div class="mt-2">
+                <p class="font-heading font-bold text-white text-base" id="polluted-name">Bhosari Industrial</p>
+                <p class="text-xs text-amber-400/80">MIDC / Heavy Traffic Zone</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Diurnal Outdoor Activity & Health Advisory Strip -->
+      <div class="rounded-3xl bg-slate-900/80 border border-slate-800/80 p-6 sm:p-8 backdrop-blur-xl shadow-xl">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Pune Lifestyle & Health Intelligence</span>
+            <h3 class="text-xl font-heading font-bold text-white">Smart Diurnal Activity Planner</h3>
+          </div>
+          <div class="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm font-semibold">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span>Best Outdoor Window: <strong id="best-window-text" class="text-white">06:00 AM - 07:30 AM</strong></span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+          <!-- Morning Walkers -->
+          <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/60 space-y-2">
+            <div class="flex items-center gap-2 text-emerald-400 text-sm font-bold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              <span>Walkers & Runners</span>
+            </div>
+            <p class="text-xs text-slate-300" id="advisory-walks">Safe for morning runs. Pashan, Baner Hills, and Vetal Tekdi offer the freshest air pockets.</p>
+          </div>
+
+          <!-- Sensitive Groups -->
+          <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/60 space-y-2">
+            <div class="flex items-center gap-2 text-amber-400 text-sm font-bold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+              <span>Asthma & Seniors</span>
+            </div>
+            <p class="text-xs text-slate-300" id="advisory-sensitive">Limit strenuous cardio near Swargate, Shivaji Nagar station, and Bhosari highway junctions.</p>
+          </div>
+
+          <!-- Commuters -->
+          <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/60 space-y-2">
+            <div class="flex items-center gap-2 text-teal-400 text-sm font-bold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+              <span>Transit & Masks</span>
+            </div>
+            <p class="text-xs text-slate-300" id="advisory-mask">Masks optional in residential wards; recommended for two-wheeler commuters on Pune bypass.</p>
+          </div>
+
+          <!-- Ventilation -->
+          <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/60 space-y-2">
+            <div class="flex items-center gap-2 text-cyan-400 text-sm font-bold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+              <span>Home Ventilation</span>
+            </div>
+            <p class="text-xs text-slate-300" id="advisory-vent">Open windows for full air circulation between 11:30 AM and 4:30 PM when sunlight aids dispersion.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Ward Carousel Grid -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-heading font-bold text-white">Pune Monitoring Wards</h3>
+          <button onclick="switchTab('leaderboard')" class="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition">View All 25 Wards &rarr;</button>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3" id="quick-ward-cards">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- VIEW 2: INTERACTIVE LIVE MAP -->
+    <section id="view-map" class="tab-view hidden space-y-4">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">GIS Environmental Intelligence</span>
+          <h2 class="text-2xl font-heading font-extrabold text-white">Pune Metropolitan Live Air Quality Map</h2>
+        </div>
+        
+        <!-- Map Controls -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-xs text-slate-400">Filter Layer:</span>
+          <button onclick="setMapFilter('all')" class="map-chip active px-3 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white">All (25)</button>
+          <button onclick="setMapFilter('good')" class="map-chip px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700">Good / Sat</button>
+          <button onclick="setMapFilter('moderate')" class="map-chip px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700">Moderate+</button>
+          <button onclick="recenterMap()" class="px-3 py-1 rounded-full text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+            <span>Center Pune</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Map Container -->
+      <div class="relative w-full h-[600px] rounded-3xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-900">
+        <div id="leaflet-map" class="w-full h-full z-10"></div>
+        
+        <!-- Map Legend Overlay -->
+        <div class="absolute bottom-6 right-6 z-20 bg-slate-950/90 backdrop-blur-md p-3.5 rounded-2xl border border-slate-800 text-xs shadow-xl space-y-1.5 pointer-events-auto">
+          <span class="font-bold text-[11px] uppercase tracking-wider text-slate-400 block border-b border-slate-800 pb-1 mb-1">NAQI Scale</span>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500"></span><span class="text-slate-300">0–50 Good</span></div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-lime-500"></span><span class="text-slate-300">51–100 Satisfactory</span></div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500"></span><span class="text-slate-300">101–200 Moderate</span></div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-orange-500"></span><span class="text-slate-300">201–300 Poor</span></div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-600"></span><span class="text-slate-300">301+ Severe</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: WARD LEADERBOARD -->
+    <section id="view-leaderboard" class="tab-view hidden space-y-6">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Neighborhood Rankings</span>
+          <h2 class="text-2xl font-heading font-extrabold text-white">Pune Ward-Wise Air Quality Leaderboard</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Ranked from cleanest to most polluted using real-time CPCB sub-index scores</p>
+        </div>
+
+        <!-- Search & Filter Controls -->
+        <div class="flex items-center gap-2 w-full sm:w-auto">
+          <div class="relative flex-1 sm:w-64">
+            <input type="text" id="leaderboard-search" placeholder="Search locality (e.g. Kothrud)..." oninput="filterLeaderboard()" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+            <svg class="w-3.5 h-3.5 text-slate-500 absolute right-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Zone Filter Chips -->
+      <div class="flex items-center gap-2 overflow-x-auto pb-1" id="zone-filter-chips">
+        <button onclick="filterByZone('all')" class="zone-chip active px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white transition flex-shrink-0">All Zones (25)</button>
+        <button onclick="filterByZone('Residential & Green Zone')" class="zone-chip px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-800 hover:bg-slate-800 transition flex-shrink-0">Residential & Green</button>
+        <button onclick="filterByZone('IT Hub & Tech Corridor')" class="zone-chip px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-800 hover:bg-slate-800 transition flex-shrink-0">IT Parks (Hinjawadi / Magarpatta)</button>
+        <button onclick="filterByZone('Industrial / Transit')" class="zone-chip px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-800 hover:bg-slate-800 transition flex-shrink-0">Industrial (Bhosari / Nigdi)</button>
+        <button onclick="filterByZone('Commercial & Dense Traffic')" class="zone-chip px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-800 hover:bg-slate-800 transition flex-shrink-0">Commercial & Traffic Corridors</button>
+      </div>
+
+      <!-- Leaderboard Cards Table -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="leaderboard-container">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- VIEW 4: SAFE COMMUTE & ROUTE EXPOSURE PLANNER -->
+    <section id="view-route" class="tab-view hidden space-y-6">
+      <div>
+        <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Exposure Minimization Engine</span>
+        <h2 class="text-2xl font-heading font-extrabold text-white">Pune Safe Commute & Route Planner</h2>
+        <p class="text-xs text-slate-400 mt-0.5">Calculate your personal particulate inhalation across Pune transit corridors</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Route Input Form (5 cols) -->
+        <div class="lg:col-span-5 rounded-3xl bg-slate-900/80 border border-slate-800/80 p-6 backdrop-blur-xl shadow-xl space-y-5">
+          <h3 class="text-lg font-heading font-bold text-white border-b border-slate-800 pb-3">Plan Your Route</h3>
+          
+          <div class="space-y-4">
+            <!-- Start Point -->
+            <div>
+              <label class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Starting Locality</label>
+              <select id="route-start" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                <option value="Kothrud">Kothrud / Paud Road</option>
+                <option value="Swargate">Swargate Transit Hub</option>
+                <option value="Shivajinagar">Shivajinagar / FC Road</option>
+                <option value="Pashan">Pashan (IITM)</option>
+                <option value="Viman Nagar">Viman Nagar / Airport</option>
+                <option value="Katraj">Katraj Ghat</option>
+                <option value="Hadapsar">Hadapsar / Magarpatta</option>
+                <option value="Baner">Baner</option>
+                <option value="Aundh">Aundh</option>
+              </select>
+            </div>
+
+            <!-- Destination -->
+            <div>
+              <label class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Destination Locality</label>
+              <select id="route-end" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                <option value="Hinjawadi IT Park" selected>Hinjawadi Phase 1 IT Park</option>
+                <option value="Viman Nagar">Viman Nagar / Airport Corridor</option>
+                <option value="Shivajinagar">Shivajinagar Central</option>
+                <option value="Bhosari Industrial">Bhosari Industrial MIDC</option>
+                <option value="Hadapsar">Hadapsar / Magarpatta Cybercity</option>
+                <option value="Kothrud">Kothrud</option>
+              </select>
+            </div>
+
+            <!-- Travel Mode -->
+            <div>
+              <label class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Mode of Travel</label>
+              <div class="grid grid-cols-4 gap-2" id="travel-mode-buttons">
+                <button type="button" onclick="setTravelMode('car')" data-mode="car" class="mode-btn active p-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-xs font-bold flex flex-col items-center gap-1">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"/></svg>
+                  <span>Car / Cab</span>
+                </button>
+                <button type="button" onclick="setTravelMode('two_wheeler')" data-mode="two_wheeler" class="mode-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 text-slate-400 text-xs font-bold flex flex-col items-center gap-1 hover:border-slate-700">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  <span>2-Wheeler</span>
+                </button>
+                <button type="button" onclick="setTravelMode('cycling')" data-mode="cycling" class="mode-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 text-slate-400 text-xs font-bold flex flex-col items-center gap-1 hover:border-slate-700">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 6a1 1 0 100-2 1 1 0 000 2zm-3 11.5L8 10l4-3 3 4.5 4-1.5"/></svg>
+                  <span>Cycling</span>
+                </button>
+                <button type="button" onclick="setTravelMode('walking')" data-mode="walking" class="mode-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 text-slate-400 text-xs font-bold flex flex-col items-center gap-1 hover:border-slate-700">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  <span>Walking</span>
+                </button>
+              </div>
+            </div>
+
+            <button type="button" onclick="calculateRouteExposure()" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+              <span>Analyze Route Exposure</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Route Output Analysis (7 cols) -->
+        <div class="lg:col-span-7 rounded-3xl bg-slate-900/80 border border-slate-800/80 p-6 sm:p-8 backdrop-blur-xl shadow-xl flex flex-col justify-between" id="route-results-card">
+          <div>
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Commute Exposure Metrics</span>
+              <span class="text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-bold" id="route-cat-badge">Satisfactory Route</span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 my-6">
+              <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                <span class="text-[10px] text-slate-400 block">Est. Distance</span>
+                <span class="text-xl font-bold text-white font-heading" id="route-distance">12.5 km</span>
+                <span class="text-[10px] text-slate-500 block">Transit Corridor</span>
+              </div>
+              <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                <span class="text-[10px] text-slate-400 block">Travel Duration</span>
+                <span class="text-xl font-bold text-white font-heading" id="route-duration">35 mins</span>
+                <span class="text-[10px] text-slate-500 block">Est. in traffic</span>
+              </div>
+              <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                <span class="text-[10px] text-slate-400 block">Average AQI</span>
+                <span class="text-xl font-bold text-emerald-400 font-heading" id="route-avg-aqi">72</span>
+                <span class="text-[10px] text-slate-500 block">Along corridor</span>
+              </div>
+              <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                <span class="text-[10px] text-slate-400 block">PM2.5 Inhaled</span>
+                <span class="text-xl font-bold text-amber-400 font-heading" id="route-pm25-inhaled">19.7 µg</span>
+                <span class="text-[10px] text-slate-500 block">Total Dosage</span>
+              </div>
+            </div>
+
+            <!-- Green Route Recommendation Box -->
+            <div class="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-2">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                  <span>Recommended Clean Route Alternative</span>
+                </div>
+                <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">-26% Exposure</span>
+              </div>
+              <p class="text-sm font-semibold text-white" id="route-alt-name">Via Mumbai-Bangalore Bypass (Pashan / Baner buffer)</p>
+              <p class="text-xs text-slate-300" id="route-alt-note">Lower traffic congestion and greener hill buffer zones around Pashan and Baner Hills significantly reduce fine particulate inhalation.</p>
+            </div>
+          </div>
+
+          <!-- Safety Tips -->
+          <div class="mt-6 pt-4 border-t border-slate-800 space-y-2">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Pune Commute Tips:</span>
+            <ul class="text-xs text-slate-300 space-y-1" id="route-tips-list">
+              <li>• Keep vehicle cabin windows rolled up and AC in internal recirculation mode.</li>
+              <li>• Avoid travelling between 8:30 AM - 10:00 AM if you have asthma or respiratory allergies.</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- VIEW 5: PERSONAL EXPOSURE TRACKER -->
+    <section id="view-tracker" class="tab-view hidden space-y-6">
+      <div>
+        <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Personal Health Monitor</span>
+        <h2 class="text-2xl font-heading font-extrabold text-white">Live Outdoor Exposure Tracker</h2>
+        <p class="text-xs text-slate-400 mt-0.5">Track your real-time cumulative particulate inhalation during outdoor walks, runs, and rides in Pune</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Live Stopwatch & Control (5 cols) -->
+        <div class="lg:col-span-5 rounded-3xl bg-slate-900/80 border border-slate-800/80 p-6 backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <h3 class="text-lg font-heading font-bold text-white border-b border-slate-800 pb-3">Session Setup</h3>
+            
+            <div>
+              <label class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Activity Type</label>
+              <select id="tracker-activity" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                <option value="running">Outdoor Running / Jogging (High ventilation: 45 L/min)</option>
+                <option value="walking" selected>Brisk Walking (Moderate: 25 L/min)</option>
+                <option value="cycling">Cycling (High: 40 L/min)</option>
+                <option value="commute">Two-Wheeler Commute (Normal: 20 L/min)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Current Pune Ward</label>
+              <select id="tracker-ward" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+          </div>
+
+          <!-- Digital Timer Display -->
+          <div class="text-center py-4 bg-slate-950/80 rounded-2xl border border-slate-800">
+            <span class="text-xs font-mono text-slate-400 uppercase tracking-widest block mb-1">Session Elapsed</span>
+            <span class="text-5xl font-heading font-extrabold text-white font-mono tracking-tight" id="tracker-timer">00:00:00</span>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex items-center gap-3">
+            <button id="tracker-start-btn" onclick="toggleTrackerSession()" class="flex-1 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <span id="tracker-btn-text">Start Exposure Session</span>
+            </button>
+            <button id="tracker-reset-btn" onclick="resetTrackerSession()" class="p-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Real-time Cumulative Inhalation Dashboard (7 cols) -->
+        <div class="lg:col-span-7 rounded-3xl bg-slate-900/80 border border-slate-800/80 p-6 sm:p-8 backdrop-blur-xl shadow-xl flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Live Inhalation Biometrics</span>
+              <span class="text-xs font-mono text-slate-400" id="tracker-status-indicator">READY TO START</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 my-6">
+              <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/60 text-center">
+                <span class="text-xs text-slate-400 block">Air Breathed</span>
+                <span class="text-3xl font-heading font-black text-white mt-1 block" id="track-air-liters">0.0</span>
+                <span class="text-[10px] text-slate-500 uppercase tracking-wider">Liters</span>
+              </div>
+              <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/60 text-center">
+                <span class="text-xs text-slate-400 block">PM2.5 Inhaled</span>
+                <span class="text-3xl font-heading font-black text-emerald-400 mt-1 block" id="track-pm25-ug">0.0</span>
+                <span class="text-[10px] text-slate-500 uppercase tracking-wider">Micrograms (µg)</span>
+              </div>
+              <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/60 text-center">
+                <span class="text-xs text-slate-400 block">Safety Quota Used</span>
+                <span class="text-3xl font-heading font-black text-teal-300 mt-1 block" id="track-safety-pct">0%</span>
+                <span class="text-[10px] text-slate-500 uppercase tracking-wider">Daily WHO Limit</span>
+              </div>
+            </div>
+
+            <!-- Exposure Score Gauge Bar -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-slate-400">Session Safety Index:</span>
+                <span class="font-bold text-emerald-400" id="tracker-safety-label">Safe & Clean</span>
+              </div>
+              <div class="w-full h-3 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800">
+                <div id="tracker-progress-bar" class="h-full bg-emerald-500 rounded-full w-0 transition-all duration-300"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Clean Air Badges -->
+          <div class="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold">
+                🏅
+              </div>
+              <div>
+                <span class="text-xs font-bold text-white block">Pune Clean Air Athlete</span>
+                <span class="text-[11px] text-slate-400">Complete a 30-min session under AQI 80 to unlock</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- VIEW 6: CITIZEN AIRWATCH -->
+    <section id="view-watch" class="tab-view hidden space-y-6">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Community Air Quality Watch</span>
+          <h2 class="text-2xl font-heading font-extrabold text-white">Pune Citizen Air Incident Watch</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Report and verify local burning, construction dust, or industrial fumes in your ward</p>
+        </div>
+        <button onclick="openReportModal()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          <span>Report Pollution Incident</span>
+        </button>
+      </div>
+
+      <!-- Feed of Citizen Reports -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="reports-feed">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Mobile Bottom Navigation Bar -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 py-2 flex items-center justify-around">
+    <button onclick="switchTab('dashboard')" class="mobile-nav-btn active flex flex-col items-center gap-1 text-slate-400 hover:text-white" id="mob-dashboard">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+      <span class="text-[10px] font-semibold">Home</span>
+    </button>
+    <button onclick="switchTab('map')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-white" id="mob-map">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+      <span class="text-[10px] font-semibold">Map</span>
+    </button>
+    <button onclick="switchTab('leaderboard')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-white" id="mob-leaderboard">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+      <span class="text-[10px] font-semibold">Wards</span>
+    </button>
+    <button onclick="switchTab('route')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-white" id="mob-route">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+      <span class="text-[10px] font-semibold">Commute</span>
+    </button>
+    <button onclick="switchTab('tracker')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-white" id="mob-tracker">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <span class="text-[10px] font-semibold">Tracker</span>
+    </button>
+  </nav>
+
+  <!-- STATION DETAIL MODAL -->
+  <div id="station-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto">
+      <button onclick="closeStationModal()" class="absolute right-6 top-6 p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400" id="modal-station-area">Shivajinagar</span>
+          <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700" id="modal-station-source">CPCB / IITM</span>
+        </div>
+        <h3 class="text-2xl font-heading font-extrabold text-white mt-1" id="modal-station-name">Station Name</h3>
+        <p class="text-xs text-slate-400" id="modal-station-coords">18.5314° N, 73.8446° E</p>
+      </div>
+
+      <!-- Current AQI + Category -->
+      <div class="flex items-center justify-between p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
+        <div>
+          <span class="text-xs text-slate-400 block">Current Air Quality</span>
+          <span class="text-4xl font-heading font-black text-white" id="modal-aqi-value">107</span>
+        </div>
+        <div class="text-right">
+          <span class="px-3.5 py-1.5 rounded-full text-xs font-bold uppercase" id="modal-cat-badge">Moderate</span>
+          <span class="text-[11px] text-slate-400 block mt-1" id="modal-dom-pollutant">Dominant: PM2.5</span>
+        </div>
+      </div>
+
+      <!-- 24-Hour Trend Chart -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">24-Hour NAQI Trend Curve</span>
+          <span class="text-[11px] text-slate-500 font-mono">Hourly CPCB Observations</span>
+        </div>
+        <div class="w-full h-56 bg-slate-950/80 rounded-2xl p-3 border border-slate-800">
+          <canvas id="station-trend-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Pollutants Grid -->
+      <div class="space-y-2">
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400">All Pollutant Readings</span>
+        <div class="grid grid-cols-3 sm:grid-cols-6 gap-2" id="modal-pollutants-grid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CITIZEN REPORT MODAL -->
+  <div id="report-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 relative">
+      <button onclick="closeReportModal()" class="absolute right-6 top-6 p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+
+      <div>
+        <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Pune Citizen AirWatch</span>
+        <h3 class="text-xl font-heading font-extrabold text-white mt-0.5">Report an Air Pollution Event</h3>
+        <p class="text-xs text-slate-400 mt-1">Directly notify fellow citizens and PMC Ward Officers</p>
+      </div>
+
+      <form id="citizen-report-form" onsubmit="submitCitizenReport(event)" class="space-y-4">
+        <div>
+          <label class="text-xs font-bold text-slate-400 block mb-1">Select Pune Ward / Locality</label>
+          <select id="report-ward" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+            <option value="Kothrud">Kothrud</option>
+            <option value="Shivajinagar">Shivajinagar</option>
+            <option value="Hinjawadi">Hinjawadi</option>
+            <option value="Bhosari">Bhosari</option>
+            <option value="Hadapsar">Hadapsar</option>
+            <option value="Viman Nagar">Viman Nagar</option>
+            <option value="Katraj">Katraj</option>
+            <option value="Baner">Baner</option>
+            <option value="Aundh">Aundh</option>
+            <option value="Swargate">Swargate</option>
+            <option value="Wakad">Wakad</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-bold text-slate-400 block mb-1">Incident Category</label>
+          <select id="report-category" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+            <option value="Garbage Burning">Biomass / Garbage Burning</option>
+            <option value="Construction Dust">Uncovered Construction Debris & Dust</option>
+            <option value="Industrial Emissions">Industrial Smoke / Chemical Odor</option>
+            <option value="Vehicle Exhaust">Heavy Diesel Black Smoke</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-bold text-slate-400 block mb-1">Description & Exact Landmark</label>
+          <textarea id="report-desc" rows="3" required placeholder="e.g. Garbage burning near Paud Road canal bridge, creating thick haze..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"></textarea>
+        </div>
+
+        <button type="submit" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition">
+          Submit Incident Report
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Scripts: Leaflet + Chart.js + App Logic -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
