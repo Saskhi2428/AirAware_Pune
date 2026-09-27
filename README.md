@@ -41,25 +41,6 @@ Works seamlessly across all platforms: **Web, Android phones, iPhones, and Mac/W
 
 ## 🚀 How to Run Across All Platforms
 
-### Option A: Universal Web & PWA (Instant for Web, Android, iPhone, Mac)
-
-1. **Double-click `run_realtime_app.bat`** (or run in terminal):
-   ```bash
-   cd backend
-   .venv\Scripts\activate
-   set PYTHONPATH=.
-   python app/services/populate_pune_stations.py
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-   ```
-2. Open **`http://localhost:8000`** in your browser.
-3. **On Android Phone**: Open Chrome to `http://<your-pc-ip>:8000`, tap the menu or banner **"Install App"** to add AirAware directly to your home screen as a native app!
-4. **On iPhone (iOS)**: Open Safari to `http://<your-pc-ip>:8000`, tap the Share button and select **"Add to Home Screen"** for a full-screen, standalone iOS app experience.
-5. **On Mac**: Open Safari or Chrome to `http://localhost:8000`, or install it as a standalone Mac web app via Chrome/Safari.
-
----
-
-### Option B: Flutter Mobile & Desktop App
-
 The Flutter project is fully scaffolded for `android`, `ios`, `macos`, `web`, and `windows`:
 
 ```bash
@@ -90,11 +71,7 @@ airaware/
 │   │   ├── services/         # AQI calculation, ingestion, and Pune station population
 │   │   └── static/           # Universal Web & PWA application build
 │   └── migrations/           # 26 PostgreSQL/PostGIS Supabase tables
-├── web/                      # Standalone PWA client (HTML5, Tailwind, Leaflet, Chart.js)
-│   ├── index.html            # Responsive multi-tab dashboard
-│   ├── styles.css            # Dark/Light glassmorphism design system
-│   ├── app.js                # Real-time state & calculations
-│   └── manifest.json         # PWA configuration
+|
 ├── flutter/                  # Flutter multi-platform application
 │   ├── lib/                  # Riverpod state management & screens
 │   ├── android/              # Native Android runner
