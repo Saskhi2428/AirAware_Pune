@@ -258,7 +258,16 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Citizen AirWatch Feed', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Citizen AirWatch Feed', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                        SizedBox(height: 2),
+                        Text('Community crowdsourced pollution reports', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                      ],
+                    ),
+                  ),
                   ElevatedButton.icon(
                     onPressed: () => _showReportDialog(context, user != null),
                     style: ElevatedButton.styleFrom(
@@ -270,6 +279,28 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                     label: const Text('Report Incident', style: TextStyle(fontSize: 12, color: Colors.white)),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.borderSubtle),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline_rounded, size: 16, color: AppColors.violet),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'AirAware Citizen Reports alert neighboring residents and feed our pollution cluster analysis. For official municipal enforcement and civic grievances, submit on PMC Care (pmc.gov.in / 1800-1030-222).',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 10),
 
@@ -351,11 +382,18 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                                         const Icon(Icons.report_problem_rounded, color: AppColors.aqiPoor, size: 16),
                                         const SizedBox(width: 6),
                                         Expanded(
-                                          child: Text(
-                                            '$cat • $ward',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '$cat • $ward',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                              ),
+                                              const SizedBox(height: 1),
+                                              const Text('AirAware Community Report', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                                            ],
                                           ),
                                         ),
                                       ],
@@ -438,6 +476,19 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.indigo.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.indigo.withValues(alpha: 0.3)),
+                ),
+                child: const Text(
+                  '📢 Note: This submits an AirAware Community Report to alert citizens. For official PMC civic action, register on pmc.gov.in.',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ),
               DropdownButtonFormField<String>(
                 value: category,
                 isExpanded: true,

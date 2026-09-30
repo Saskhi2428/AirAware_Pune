@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import '../auth/auth_state_provider.dart';
 import '../models/station.dart';
 import '../repositories/pune_api_repository.dart';
+import '../services/exposure_tracker_service.dart';
 import '../services/notification_service.dart';
 
 final puneApiRepositoryProvider = Provider<PuneApiRepository>((ref) => PuneApiRepository());
@@ -273,17 +274,17 @@ final userAlertsProvider = AsyncNotifierProvider<UserAlertsNotifier, List<Map<St
   UserAlertsNotifier.new,
 );
 
-/// User Exposure Sessions Provider
+/// User Exposure Sessions Provider (loads persistent device & cloud sessions)
 class ExposureSessionsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   @override
   Future<List<Map<String, dynamic>>> build() async {
-    final user = ref.watch(currentUserProvider);
-    if (user == null) return [];
-    return ref.read(puneApiRepositoryProvider).getExposureSessions();
+    final repo = ref.watch(puneApiRepositoryProvider);
+    return ExposureTrackerService.instance.getPastSessions(repository: repo);
   }
 
   Future<void> refresh() async {
-    state = AsyncData(await ref.read(puneApiRepositoryProvider).getExposureSessions());
+    final repo = ref.read(puneApiRepositoryProvider);
+    state = AsyncData(await ExposureTrackerService.instance.getPastSessions(repository: repo));
   }
 }
 

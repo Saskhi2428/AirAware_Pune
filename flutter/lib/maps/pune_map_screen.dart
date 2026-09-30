@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../auth/auth_state_provider.dart';
 import '../models/station.dart';
 import '../providers/pune_providers.dart';
+import '../services/exposure_tracker_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/gradient_scaffold.dart';
 
@@ -39,6 +40,7 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
     final snapshotAsync = ref.watch(mapSnapshotProvider);
     final hotspotsAsync = ref.watch(hotspotsProvider);
     final userPos = ref.watch(deviceLocationProvider).valueOrNull;
+    final tracker = ref.watch(exposureTrackerProvider);
 
     return GradientScaffold(
       appBar: AppBar(
@@ -75,6 +77,16 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
               ),
             );
           }
+
+          final cleanCount = stations.where((s) => (s.aqiValue ?? 100) <= 80).length;
+          final elevatedCount = stations.where((s) => (s.aqiValue ?? 0) > 80).length;
+
+          final suggestions = _searchQuery.isEmpty
+              ? <Station>[]
+              : stations.where((s) {
+                  final q = _searchQuery.toLowerCase();
+                  return s.name.toLowerCase().contains(q) || (s.area ?? '').toLowerCase().contains(q);
+                }).take(4).toList();
 
           final filteredStations = stations.where((s) {
             if (_searchQuery.isNotEmpty) {
@@ -213,12 +225,13 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
                 ],
               ),
 
-              // Search bar and filter chips floating at top
+              // Search bar, suggestions, and filter chips floating at top
               Positioned(
                 top: 12,
                 left: 16,
                 right: 16,
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // Search Bar
                     Container(
@@ -250,6 +263,79 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
                         onChanged: (val) => setState(() => _searchQuery = val.trim()),
                       ),
                     ),
+
+                    // Interactive Suggestions Dropdown
+                    if (_searchQuery.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppColors.borderSubtle),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
+                          ],
+                        ),
+                        child: suggestions.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Text(
+                                  'No Pune monitoring stations found',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                                ),
+                              )
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                itemCount: suggestions.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.borderSubtle),
+                                itemBuilder: (ctx, idx) {
+                                  final s = suggestions[idx];
+                                  final col = s.hasCurrentAqi
+                                      ? AppColors.colorForAqiCategory(s.aqiCategory)
+                                      : AppColors.aqiUnavailable;
+                                  return ListTile(
+                                    dense: true,
+                                    visualDensity: VisualDensity.compact,
+                                    title: Text(
+                                      s.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.white),
+                                    ),
+                                    subtitle: Text(
+                                      s.area ?? 'Pune Region',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                                    ),
+                                    trailing: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: col.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: col.withValues(alpha: 0.6)),
+                                      ),
+                                      child: Text(
+                                        s.hasCurrentAqi ? '${s.aqiValue} AQI' : '–',
+                                        style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 11),
+                                      ),
+                                    ),
+                                    onTap: () {
+                                      FocusScope.of(context).unfocus();
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                      _mapController.move(LatLng(s.latitude, s.longitude), 14.5);
+                                      _showStationPreview(context, s, user != null);
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+
                     const SizedBox(height: 8),
 
                     // Filter chips row
@@ -259,9 +345,9 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
                         children: [
                           _filterChip('All (${stations.length})', 'all'),
                           const SizedBox(width: 8),
-                          _filterChip('Clean (≤80)', 'clean'),
+                          _filterChip('Clean ($cleanCount)', 'clean'),
                           const SizedBox(width: 8),
-                          _filterChip('Elevated (>80)', 'elevated'),
+                          _filterChip('Elevated ($elevatedCount)', 'elevated'),
                         ],
                       ),
                     ),
@@ -269,7 +355,41 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
                 ),
               ),
 
-              // Recenter map button
+              // Floating Exposure Tracker Button (Bottom Left)
+              Positioned(
+                bottom: 96,
+                left: 16,
+                child: FloatingActionButton.extended(
+                  heroTag: 'map_exposure_fab',
+                  backgroundColor: AppColors.surfaceElevated,
+                  elevation: 6,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: tracker.isTracking ? AppColors.aqiGood : AppColors.borderSubtle,
+                      width: tracker.isTracking ? 1.8 : 1.0,
+                    ),
+                  ),
+                  icon: Icon(
+                    tracker.isTracking ? Icons.directions_walk_rounded : Icons.directions_walk_outlined,
+                    color: tracker.isTracking ? AppColors.aqiGood : AppColors.violet,
+                    size: 20,
+                  ),
+                  label: Text(
+                    tracker.isTracking
+                        ? 'Tracking (${tracker.elapsedTimeString})'
+                        : 'Exposure Tracker',
+                    style: TextStyle(
+                      color: tracker.isTracking ? AppColors.aqiGood : AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                  onPressed: () => context.push('/exposure'),
+                ),
+              ),
+
+              // Recenter map button (Bottom Right)
               Positioned(
                 bottom: 96,
                 right: 16,
@@ -345,170 +465,210 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
   }
 
   void _showStationPreview(BuildContext context, Station station, bool isLoggedIn) {
-    final color = AppColors.colorForAqiCategory(station.aqiCategory);
+    final color = station.hasCurrentAqi
+        ? AppColors.colorForAqiCategory(station.aqiCategory)
+        : AppColors.aqiUnavailable;
 
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.borderSubtle),
-          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 20)],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(station.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                      const SizedBox(height: 2),
-                      Text(station.area ?? 'Pune Region', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: color)),
-                  child: Text('${station.aqiValue ?? "–"} AQI', style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 14)),
-                ),
-              ],
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.85,
             ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                _previewPill('Category', station.aqiCategory ?? 'Unknown', color),
-                const SizedBox(width: 8),
-                _previewPill('Dominant', station.dominantPollutant?.toUpperCase() ?? 'PM2.5', AppColors.violet),
-                const SizedBox(width: 8),
-                _previewPill('Status', 'Live Sensor', AppColors.aqiGood),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // Embedded 24h Sparkline preview
-            _StationSparkline(stationId: station.id, aqiColor: color),
-            const SizedBox(height: 16),
-
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      context.push('/station/${station.id}');
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.indigo,
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    icon: const Icon(Icons.analytics_outlined, color: Colors.white, size: 16),
-                    label: const Text('Analytics', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
-                  ),
+            child: SingleChildScrollView(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppColors.borderSubtle),
+                  boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 20)],
                 ),
-                const SizedBox(width: 6),
-                IconButton(
-                  tooltip: 'Compare with other stations',
-                  icon: const Icon(Icons.compare_arrows_rounded, color: AppColors.violet),
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppColors.surface,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.borderSubtle)),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    context.push('/station/${station.id}');
-                  },
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: 'Share station report',
-                  icon: const Icon(Icons.share_outlined, color: AppColors.violet),
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppColors.surface,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.borderSubtle)),
-                  ),
-                  onPressed: () {
-                    Share.share(
-                      '🌿 AirSense Pune — Map Intelligence\n\n'
-                      '📍 Station: ${station.name} (${station.area ?? "Pune"})\n'
-                      '📊 Current AQI: ${station.aqiValue ?? "—"} (${station.aqiCategory ?? "Standard"})\n'
-                      '🔬 Primary Pollutant: ${(station.dominantPollutant ?? "PM2.5").toUpperCase()}\n'
-                      '🕒 Real-time Pune Urban Sensor Telemetry\n\n'
-                      'Track Pune air quality live on AirSense 🌍',
-                      subject: 'AirSense Pune: ${station.name} Air Quality',
-                    );
-                  },
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: 'Cleaner route here',
-                  icon: const Icon(Icons.directions_rounded, color: AppColors.violet),
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppColors.surface,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.borderSubtle)),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    context.push('/exposure', extra: station.name);
-                  },
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: 'Bookmark station',
-                  icon: const Icon(Icons.bookmark_add_outlined, color: AppColors.violet),
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppColors.surface,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.borderSubtle)),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    if (!isLoggedIn) {
-                      showDialog(
-                        context: context,
-                        builder: (dCtx) => AlertDialog(
-                          backgroundColor: AppColors.surfaceElevated,
-                          title: const Text('Sign In Required', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-                          content: const Text(
-                            'Sign in to save this Pune monitoring station to your personal dashboard.',
-                            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                station.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                station.area ?? 'Pune Region',
+                                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                              ),
+                            ],
                           ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted))),
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.pop(dCtx);
-                                context.push('/login');
-                              },
-                              style: ElevatedButton.styleFrom(backgroundColor: AppColors.indigo),
-                              child: const Text('Sign In', style: TextStyle(color: Colors.white)),
-                            ),
-                          ],
                         ),
-                      );
-                    } else {
-                      final label = station.area ?? station.name.split(',')[0];
-                      ref.read(savedLocationsProvider.notifier).addLocation(label, station.latitude, station.longitude);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Added "$label" to your saved places!')),
-                      );
-                    }
-                  },
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: color),
+                          ),
+                          child: Text(
+                            station.hasCurrentAqi ? '${station.aqiValue} AQI' : '– AQI',
+                            style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 14),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 20),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        _previewPill('Category', station.aqiCategory ?? 'Unknown', color),
+                        const SizedBox(width: 8),
+                        _previewPill('Dominant', (station.dominantPollutant ?? 'PM2.5').toUpperCase(), AppColors.violet),
+                        const SizedBox(width: 8),
+                        _previewPill('Source', station.locationTypeLabel, AppColors.aqiGood),
+                      ],
+                    ),
+                    if (station.lastObservationAt != null) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time_rounded, size: 12, color: AppColors.textMuted),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Observed: ${station.lastObservationAt!.toLocal().hour.toString().padLeft(2, '0')}:${station.lastObservationAt!.toLocal().minute.toString().padLeft(2, '0')} • Freshness: ${station.freshness.toUpperCase()}',
+                            style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+
+                    // Embedded 24h Sparkline preview
+                    _StationSparkline(stationId: station.id, aqiColor: color),
+                    const SizedBox(height: 16),
+
+                    // Action buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              context.push('/station/${station.id}');
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.indigo,
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            icon: const Icon(Icons.analytics_outlined, color: Colors.white, size: 16),
+                            label: const Text('Full Analytics', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        IconButton(
+                          tooltip: 'Cleaner route here',
+                          icon: const Icon(Icons.directions_rounded, color: AppColors.violet),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppColors.surface,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.borderSubtle)),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            context.push('/exposure', extra: station.name);
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: 'Share station report',
+                          icon: const Icon(Icons.share_outlined, color: AppColors.violet),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppColors.surface,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.borderSubtle)),
+                          ),
+                          onPressed: () {
+                            Share.share(
+                              '🌿 AirAware Pune — Map Intelligence\n\n'
+                              '📍 Station: ${station.name} (${station.area ?? "Pune"})\n'
+                              '📊 Current AQI: ${station.aqiValue ?? "—"} (${station.aqiCategory ?? "Standard"})\n'
+                              '🔬 Primary Pollutant: ${(station.dominantPollutant ?? "PM2.5").toUpperCase()}\n'
+                              '🕒 Real-time Pune Urban Sensor Telemetry\n\n'
+                              'Track Pune air quality live on AirAware 🌍',
+                              subject: 'AirAware Pune: ${station.name} Air Quality',
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: 'Bookmark station',
+                          icon: const Icon(Icons.bookmark_add_outlined, color: AppColors.violet),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppColors.surface,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.borderSubtle)),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            if (!isLoggedIn) {
+                              showDialog(
+                                context: context,
+                                builder: (dCtx) => AlertDialog(
+                                  backgroundColor: AppColors.surfaceElevated,
+                                  title: const Text('Sign In Required', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                                  content: const Text(
+                                    'Sign in to save this Pune monitoring station to your personal dashboard.',
+                                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                  ),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted))),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.pop(dCtx);
+                                        context.push('/login');
+                                      },
+                                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.indigo),
+                                      child: const Text('Sign In', style: TextStyle(color: Colors.white)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            } else {
+                              final label = station.area ?? station.name.split(',')[0];
+                              ref.read(savedLocationsProvider.notifier).addLocation(label, station.latitude, station.longitude);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Added "$label" to your saved places!')),
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );

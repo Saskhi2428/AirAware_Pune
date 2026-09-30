@@ -43,6 +43,7 @@ dependencies:
   # like a generic template rather than a designed product.
   google_fonts: ^6.2.1
   share_plus: ^12.0.2
+  shared_preferences: ^2.3.2
 
 
 dev_dependencies:
