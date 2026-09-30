@@ -145,14 +145,17 @@ class _DiurnalTrendCard extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Diurnal Trends & Dominant Pollutants', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                  SizedBox(height: 2),
-                  Text('Real-time analysis across 49 Pune monitoring stations', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
-                ],
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Diurnal Trends & Pollutants', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    SizedBox(height: 2),
+                    Text('Real-time analysis across Pune monitoring network', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: AppColors.indigo.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
@@ -658,13 +661,18 @@ class _DataHealthCenterCard extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.verified_rounded, color: AppColors.aqiGood, size: 18),
-                  SizedBox(width: 8),
-                  Text('Data Health & Provenance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                ],
+              const Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.verified_rounded, color: AppColors.aqiGood, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Data Health & Provenance', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -709,9 +717,21 @@ class _DataHealthCenterCard extends ConsumerWidget {
         children: [
           Icon(icon, size: 14, color: AppColors.violet),
           const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-          const Spacer(),
-          Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+          Expanded(
+            flex: 4,
+            child: Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 5,
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+            ),
+          ),
         ],
       ),
     );

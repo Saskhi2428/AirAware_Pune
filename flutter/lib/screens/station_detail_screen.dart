@@ -282,7 +282,10 @@ class _StationDetailScreenState extends ConsumerState<StationDetailScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Historical Trend', style: Theme.of(context).textTheme.titleLarge),
+                    Expanded(
+                      child: Text('Historical Trend', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
+                    ),
+                    const SizedBox(width: 8),
                     Container(
                       decoration: BoxDecoration(
                         color: AppColors.surface,
@@ -514,7 +517,9 @@ class _StationDetailScreenState extends ConsumerState<StationDetailScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Station Comparison Tool', style: Theme.of(context).textTheme.titleLarge),
+                    Expanded(
+                      child: Text('Station Comparison Tool', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
+                    ),
                     if (_compareStationIds.isNotEmpty)
                       TextButton(
                         onPressed: () => setState(() => _compareStationIds.clear()),
@@ -568,6 +573,7 @@ class _StationDetailScreenState extends ConsumerState<StationDetailScreen> {
                       // Station Selector Dropdown
                       if (_compareStationIds.length < 2) ...[
                         DropdownButtonFormField<String>(
+                          key: ValueKey('compare_station_picker_${_compareStationIds.length}'),
                           value: null,
                           isExpanded: true,
                           dropdownColor: AppColors.surface,
@@ -669,12 +675,10 @@ class _StationDetailScreenState extends ConsumerState<StationDetailScreen> {
                   height: 52,
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.navigation_rounded),
-                    label: Flexible(
-                      child: Text(
-                        'Calculate Clean Route to ${station.area ?? station.name}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    label: Text(
+                      'Calculate Clean Route to ${station.area ?? station.name}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.indigo,
@@ -787,7 +791,7 @@ class _StationDetailScreenState extends ConsumerState<StationDetailScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Flexible(
+                Expanded(
                   child: Text(
                     'NAAQS Limit: ${limit.toStringAsFixed(0)} ${p.unit}',
                     maxLines: 1,
@@ -797,7 +801,7 @@ class _StationDetailScreenState extends ConsumerState<StationDetailScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '$pct% of safe threshold',
+                  '$pct% of limit',
                   style: TextStyle(color: meterColor, fontSize: 11, fontWeight: FontWeight.w600),
                 ),
               ],
