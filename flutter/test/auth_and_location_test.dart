@@ -82,5 +82,19 @@ void main() {
       expect(reports, isA<List>());
     });
 
+    test('fetchUserProfile returns guest profile map for unauthenticated environment', () async {
+      final repo = PuneApiRepository();
+      final profile = await repo.fetchUserProfile();
+      expect(profile, contains('id'));
+      expect(profile, contains('full_name'));
+      expect(profile, contains('role'));
+      expect(profile, contains('notification_prefs'));
+      expect(profile['notification_prefs'], isA<Map>());
+    });
+
+    test('updateProfileName throws Exception when user is unauthenticated', () async {
+      final repo = PuneApiRepository();
+      expect(() => repo.updateProfileName('New Name'), throwsA(isA<Exception>()));
+    });
   });
 }

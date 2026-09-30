@@ -399,18 +399,148 @@ class PuneApiRepository {
   // -------------------------------------------------------------
 
   Future<Map<String, dynamic>> fetchUserProfile() async {
-    try {
-      final body = await _getJson(_uri('/users/profile'));
-      return body['data'] as Map<String, dynamic>;
-    } catch (_) {
-      final user = _safeGetCurrentUser();
+    final user = _safeGetCurrentUser();
+    if (user == null) {
       return {
-        'id': user?.id ?? 'guest',
-        'email': user?.email ?? 'guest@airaware.in',
-        'full_name': user?.email?.split('@')[0] ?? 'Pune Citizen',
-        'role': 'user',
+        'id': 'guest',
+        'email': '',
+        'full_name': 'Pune Citizen Guest',
+        'role': 'guest',
+        'notification_prefs': <String, dynamic>{},
       };
     }
+
+    // 1. Direct Supabase query for real-time consistency
+    final sb = _supabase;
+    if (sb != null) {
+      try {
+        final res = await sb
+            .from('profiles')
+            .select('id, full_name, role, notification_prefs, home_location_id, college_location_id, office_location_id, created_at, updated_at')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (res != null) {
+          final data = Map<String, dynamic>.from(res);
+          data['email'] = user.email ?? '';
+          if (data['notification_prefs'] == null || data['notification_prefs'] is! Map) {
+            data['notification_prefs'] = <String, dynamic>{};
+          }
+          return data;
+        } else {
+          // Auto-provision initial profile record if not yet created
+          final initialName = (user.userMetadata?['full_name'] as String?)?.trim().isNotEmpty == true
+              ? user.userMetadata!['full_name'] as String
+              : (user.email?.split('@')[0].replaceAll('.', ' ') ?? 'Pune Citizen');
+          final defaultPrefs = <String, dynamic>{
+            'health_persona': 'General Citizen',
+            'morning_brief': true,
+            'spike_alerts': true,
+            'asthma_sensitivity': false,
+            'outdoor_athlete': true,
+          };
+          final inserted = await sb.from('profiles').insert({
+            'id': user.id,
+            'full_name': initialName,
+            'notification_prefs': defaultPrefs,
+          }).select().single();
+
+          final data = Map<String, dynamic>.from(inserted);
+          data['email'] = user.email ?? '';
+          return data;
+        }
+      } catch (e) {
+        debugPrint('[PuneApiRepository] Supabase direct fetchUserProfile error: $e');
+      }
+    }
+
+    // 2. Fallback to backend API
+    try {
+      final token = _safeGetAccessToken();
+      if (token != null && token.isNotEmpty) {
+        final body = await _getJson(_uri('/users/profile'), token: token);
+        if (body['data'] != null) {
+          final data = Map<String, dynamic>.from(body['data'] as Map);
+          data['email'] = user.email ?? data['email'] ?? '';
+          return data;
+        }
+      }
+    } catch (e) {
+      debugPrint('[PuneApiRepository] Backend fetchUserProfile fallback: $e');
+    }
+
+    return {
+      'id': user.id,
+      'email': user.email ?? '',
+      'full_name': (user.userMetadata?['full_name'] as String?) ?? user.email?.split('@')[0] ?? 'Pune Citizen',
+      'role': 'user',
+      'notification_prefs': <String, dynamic>{
+        'health_persona': 'General Citizen',
+        'morning_brief': true,
+        'spike_alerts': true,
+        'asthma_sensitivity': false,
+        'outdoor_athlete': true,
+      },
+    };
+  }
+
+  Future<void> updateProfileName(String newName) async {
+    final user = _safeGetCurrentUser();
+    if (user == null) {
+      throw Exception('Not authenticated. Please sign in to update profile.');
+    }
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) {
+      throw Exception('Name cannot be empty.');
+    }
+
+    final sb = _supabase;
+    if (sb != null) {
+      // Update public.profiles without sending email!
+      await sb.from('profiles').update({
+        'full_name': trimmed,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', user.id);
+
+      // Keep Supabase Auth user metadata synchronized
+      try {
+        await sb.auth.updateUser(
+          UserAttributes(data: {'full_name': trimmed}),
+        );
+      } catch (authErr) {
+        debugPrint('[PuneApiRepository] Auth metadata sync non-fatal error: $authErr');
+      }
+    }
+
+    // Inform backend API if reachable
+    try {
+      final token = _safeGetAccessToken();
+      if (token != null && token.isNotEmpty) {
+        await _patchJson(_uri('/users/profile'), {'full_name': trimmed}, token: token);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> updateNotificationPrefs(Map<String, dynamic> prefs) async {
+    final user = _safeGetCurrentUser();
+    if (user == null) {
+      throw Exception('Not authenticated.');
+    }
+
+    final sb = _supabase;
+    if (sb != null) {
+      await sb.from('profiles').update({
+        'notification_prefs': prefs,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', user.id);
+    }
+
+    try {
+      final token = _safeGetAccessToken();
+      if (token != null && token.isNotEmpty) {
+        await _patchJson(_uri('/users/profile'), {'notification_prefs': prefs}, token: token);
+      }
+    } catch (_) {}
   }
 
   Future<void> updateUserProfile({
@@ -421,16 +551,33 @@ class PuneApiRepository {
     String? officeLocationId,
     Map<String, dynamic>? notificationPrefs,
   }) async {
-    try {
-      final payload = <String, dynamic>{};
-      if (fullName != null) payload['full_name'] = fullName;
-      if (role != null) payload['role'] = role;
-      if (homeLocationId != null) payload['home_location_id'] = homeLocationId;
-      if (collegeLocationId != null) payload['college_location_id'] = collegeLocationId;
-      if (officeLocationId != null) payload['office_location_id'] = officeLocationId;
-      if (notificationPrefs != null) payload['notification_prefs'] = notificationPrefs;
+    final user = _safeGetCurrentUser();
+    if (user == null) return;
 
-      await _patchJson(_uri('/users/profile'), payload);
+    final updates = <String, dynamic>{
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+    if (fullName != null) updates['full_name'] = fullName;
+    if (role != null) updates['role'] = role;
+    if (homeLocationId != null) updates['home_location_id'] = homeLocationId;
+    if (collegeLocationId != null) updates['college_location_id'] = collegeLocationId;
+    if (officeLocationId != null) updates['office_location_id'] = officeLocationId;
+    if (notificationPrefs != null) updates['notification_prefs'] = notificationPrefs;
+
+    final sb = _supabase;
+    if (sb != null) {
+      try {
+        await sb.from('profiles').update(updates).eq('id', user.id);
+      } catch (e) {
+        debugPrint('[PuneApiRepository] Supabase updateUserProfile error: $e');
+      }
+    }
+
+    try {
+      final token = _safeGetAccessToken();
+      if (token != null && token.isNotEmpty) {
+        await _patchJson(_uri('/users/profile'), updates, token: token);
+      }
     } catch (_) {}
   }
 

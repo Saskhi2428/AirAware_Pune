@@ -292,8 +292,65 @@ final exposureSessionsProvider = AsyncNotifierProvider<ExposureSessionsNotifier,
   ExposureSessionsNotifier.new,
 );
 
-/// Active Health Persona ('General', 'Asthma / Respiratory', 'Senior Citizen', 'Outdoor Athlete', 'Child')
-final activeHealthPersonaProvider = StateProvider<String>((ref) => 'General');
+/// User Profile Notifier (backed by public.profiles in Supabase)
+class UserProfileNotifier extends AsyncNotifier<Map<String, dynamic>> {
+  @override
+  Future<Map<String, dynamic>> build() async {
+    final user = ref.watch(currentUserProvider);
+    if (user == null) {
+      return {
+        'id': 'guest',
+        'email': '',
+        'full_name': 'Pune Citizen Guest',
+        'role': 'guest',
+        'notification_prefs': <String, dynamic>{
+          'health_persona': 'General Citizen',
+          'morning_brief': true,
+          'spike_alerts': true,
+          'asthma_sensitivity': false,
+          'outdoor_athlete': true,
+        },
+      };
+    }
+    final profile = await ref.read(puneApiRepositoryProvider).fetchUserProfile();
+    return profile;
+  }
+
+  Future<void> updateFullName(String newName) async {
+    await ref.read(puneApiRepositoryProvider).updateProfileName(newName);
+    state = AsyncData(await ref.read(puneApiRepositoryProvider).fetchUserProfile());
+    ref.invalidate(currentUserProvider);
+  }
+
+  Future<void> updateNotificationPrefs(Map<String, dynamic> prefs) async {
+    await ref.read(puneApiRepositoryProvider).updateNotificationPrefs(prefs);
+    state = AsyncData(await ref.read(puneApiRepositoryProvider).fetchUserProfile());
+    final persona = prefs['health_persona'] as String?;
+    if (persona != null && persona.isNotEmpty) {
+      ref.read(activeHealthPersonaProvider.notifier).state = persona;
+    }
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() => ref.read(puneApiRepositoryProvider).fetchUserProfile());
+  }
+}
+
+final userProfileProvider = AsyncNotifierProvider<UserProfileNotifier, Map<String, dynamic>>(
+  UserProfileNotifier.new,
+);
+
+/// Active Health Persona ('General Citizen', 'Asthma / Respiratory', 'Senior Citizen', 'Outdoor Athlete', 'Child / Parent')
+final activeHealthPersonaProvider = StateProvider<String>((ref) {
+  final profileAsync = ref.watch(userProfileProvider);
+  final prefs = profileAsync.valueOrNull?['notification_prefs'] as Map<String, dynamic>?;
+  final saved = prefs?['health_persona'] as String?;
+  if (saved != null && saved.isNotEmpty) {
+    return saved;
+  }
+  return 'General Citizen';
+});
 
 /// Data Health & Diagnostics
 final dataHealthProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
