@@ -658,11 +658,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 children: [
                                   Text(
                                     displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
                                     user.email ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
                                   ),
                                   const SizedBox(height: 8),
@@ -678,9 +682,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       children: [
                                         Icon(roleIcon, size: 12, color: roleColor),
                                         const SizedBox(width: 4),
-                                        Text(
-                                          'ROLE: $roleLabel • AUTHENTICATED',
-                                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: roleColor),
+                                        Flexible(
+                                          child: Text(
+                                            roleLabel,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: roleColor, letterSpacing: 0.5),
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -906,7 +914,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('Notifications & Alerts', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                                const Expanded(
+                                  child: Text(
+                                    'Notifications & Alerts',
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
@@ -920,8 +934,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       Icon(Icons.check_circle_rounded, color: AppColors.aqiGood, size: 12),
                                       SizedBox(width: 4),
                                       Text(
-                                        'Delivery: In-app & local alerts active',
-                                        style: TextStyle(color: AppColors.aqiGood, fontSize: 10, fontWeight: FontWeight.w600),
+                                        'Active',
+                                        style: TextStyle(color: AppColors.aqiGood, fontSize: 10, fontWeight: FontWeight.w700),
                                       ),
                                     ],
                                   ),
@@ -930,7 +944,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ),
                             const SizedBox(height: 4),
                             const Text(
-                              'Cloud-persisted alert preferences for Pune monitoring stations.',
+                              'Cloud-persisted preferences with local & in-app alerts active.',
                               style: TextStyle(fontSize: 11, color: AppColors.textMuted),
                             ),
                             const SizedBox(height: 10),
@@ -1214,8 +1228,17 @@ class _DataHealthSection extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-          Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+          Expanded(
+            child: Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+            ),
+          ),
         ],
       ),
     );

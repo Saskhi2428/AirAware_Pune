@@ -16,6 +16,6 @@ class Env {
         defaultTargetPlatform == TargetPlatform.macOS) {
       return dotenv.get('API_BASE_URL_DESKTOP', fallback: 'http://127.0.0.1:8000/api/v1');
     }
-    return dotenv.get('API_BASE_URL', fallback: 'http://10.165.18.249:8000/api/v1');
+    return dotenv.get('API_BASE_URL', fallback: 'http://192.168.0.104:8000/api/v1');
   }
 }
