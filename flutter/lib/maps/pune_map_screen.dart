@@ -24,6 +24,7 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
   static const _puneCenter = LatLng(18.53, 73.85);
   final MapController _mapController = MapController();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   bool _showHotspots = true;
   String _selectedFilter = 'all'; // 'all', 'clean', 'elevated'
   String _searchQuery = '';
@@ -31,7 +32,42 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _selectStation(Station station, bool isLoggedIn) {
+    _searchFocusNode.unfocus();
+    _searchController.text = station.name;
+    setState(() => _searchQuery = '');
+    _mapController.move(LatLng(station.latitude, station.longitude), 14.5);
+    _showStationPreview(context, station, isLoggedIn);
+  }
+
+  void _handleSearchSubmit(String query, List<Station> stations, bool isLoggedIn) {
+    _searchFocusNode.unfocus();
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return;
+
+    Station? match;
+    for (final s in stations) {
+      if (s.name.toLowerCase().contains(q) || (s.area ?? '').toLowerCase().contains(q)) {
+        match = s;
+        break;
+      }
+    }
+
+    if (match != null) {
+      _selectStation(match, isLoggedIn);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No Pune monitoring station found for "$query"'),
+          backgroundColor: AppColors.surfaceElevated,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   @override
@@ -43,19 +79,6 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
     final tracker = ref.watch(exposureTrackerProvider);
 
     return GradientScaffold(
-      appBar: AppBar(
-        title: const Text('Pune GIS Air Intelligence'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _showHotspots ? Icons.bubble_chart_rounded : Icons.bubble_chart_outlined,
-              color: _showHotspots ? AppColors.violet : AppColors.textMuted,
-            ),
-            tooltip: 'Toggle Hotspot Clusters',
-            onPressed: () => setState(() => _showHotspots = !_showHotspots),
-          ),
-        ],
-      ),
       body: snapshotAsync.when(
         loading: () => const Center(child: CircularProgressIndicator(color: AppColors.indigo)),
         error: (err, _) => _MapError(
@@ -81,16 +104,15 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
           final cleanCount = stations.where((s) => (s.aqiValue ?? 100) <= 80).length;
           final elevatedCount = stations.where((s) => (s.aqiValue ?? 0) > 80).length;
 
-          final suggestions = _searchQuery.isEmpty
+          final q = _searchQuery.toLowerCase().trim();
+          final suggestions = q.isEmpty
               ? <Station>[]
               : stations.where((s) {
-                  final q = _searchQuery.toLowerCase();
                   return s.name.toLowerCase().contains(q) || (s.area ?? '').toLowerCase().contains(q);
-                }).take(4).toList();
+                }).take(6).toList();
 
           final filteredStations = stations.where((s) {
-            if (_searchQuery.isNotEmpty) {
-              final q = _searchQuery.toLowerCase();
+            if (q.isNotEmpty) {
               final matchesName = s.name.toLowerCase().contains(q);
               final matchesArea = (s.area ?? '').toLowerCase().contains(q);
               if (!matchesName && !matchesArea) return false;
@@ -180,6 +202,7 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
                   height: 32,
                   child: GestureDetector(
                     onTap: () {
+                      _searchFocusNode.unfocus();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('AirWatch Incident: $cat • $ward\n$desc'),
@@ -206,11 +229,16 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
             children: [
               FlutterMap(
                 mapController: _mapController,
-                options: const MapOptions(
+                options: MapOptions(
                   initialCenter: _puneCenter,
                   initialZoom: 11.5,
                   minZoom: 9.0,
                   maxZoom: 17.0,
+                  onTap: (_, __) {
+                    if (_searchFocusNode.hasFocus) {
+                      _searchFocusNode.unfocus();
+                    }
+                  },
                 ),
                 children: [
                   TileLayer(
@@ -227,112 +255,167 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
 
               // Search bar, suggestions, and filter chips floating at top
               Positioned(
-                top: 12,
+                top: MediaQuery.paddingOf(context).top + 10,
                 left: 16,
                 right: 16,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Search Bar
+                    // Modern Floating Search Bar with Hotspot toggle & actions
                     Container(
+                      height: 52,
                       decoration: BoxDecoration(
                         color: AppColors.surfaceElevated,
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(26),
                         border: Border.all(color: AppColors.borderSubtle),
-                        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 4))],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
-                      child: TextField(
-                        controller: _searchController,
-                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
-                        decoration: InputDecoration(
-                          hintText: 'Search Pune locality (e.g. Pashan, Hinjawadi)...',
-                          hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                          prefixIcon: const Icon(Icons.search_rounded, color: AppColors.violet, size: 18),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear_rounded, color: AppColors.textMuted, size: 16),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        ),
-                        onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(left: 8, right: 6),
+                            child: Icon(Icons.search_rounded, color: AppColors.violet, size: 22),
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              focusNode: _searchFocusNode,
+                              textInputAction: TextInputAction.search,
+                              style: const TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500),
+                              decoration: const InputDecoration(
+                                hintText: 'Search Pune locality (e.g. Pashan, Hinjawadi)...',
+                                hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                                isDense: true,
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                filled: false,
+                                contentPadding: EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                              onSubmitted: (query) => _handleSearchSubmit(query, stations, user != null),
+                            ),
+                          ),
+                          if (_searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear_rounded, color: AppColors.textMuted, size: 18),
+                              tooltip: 'Clear search',
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            ),
+                          Container(
+                            height: 22,
+                            width: 1,
+                            color: AppColors.borderSubtle,
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              _showHotspots ? Icons.bubble_chart_rounded : Icons.bubble_chart_outlined,
+                              color: _showHotspots ? AppColors.violet : AppColors.textMuted,
+                              size: 22,
+                            ),
+                            tooltip: _showHotspots ? 'Hide Pollution Hotspots' : 'Show Pollution Hotspots',
+                            onPressed: () => setState(() => _showHotspots = !_showHotspots),
+                          ),
+                        ],
                       ),
                     ),
 
                     // Interactive Suggestions Dropdown
                     if (_searchQuery.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Container(
-                        constraints: const BoxConstraints(maxHeight: 220),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceElevated,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.borderSubtle),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
-                          ],
-                        ),
-                        child: suggestions.isEmpty
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: Text(
-                                  'No Pune monitoring stations found',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-                                ),
-                              )
-                            : ListView.separated(
-                                shrinkWrap: true,
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                itemCount: suggestions.length,
-                                separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.borderSubtle),
-                                itemBuilder: (ctx, idx) {
-                                  final s = suggestions[idx];
-                                  final col = s.hasCurrentAqi
-                                      ? AppColors.colorForAqiCategory(s.aqiCategory)
-                                      : AppColors.aqiUnavailable;
-                                  return ListTile(
-                                    dense: true,
-                                    visualDensity: VisualDensity.compact,
-                                    title: Text(
-                                      s.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.white),
-                                    ),
-                                    subtitle: Text(
-                                      s.area ?? 'Pune Region',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
-                                    ),
-                                    trailing: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: col.withValues(alpha: 0.2),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(color: col.withValues(alpha: 0.6)),
-                                      ),
-                                      child: Text(
-                                        s.hasCurrentAqi ? '${s.aqiValue} AQI' : '–',
-                                        style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 11),
-                                      ),
-                                    ),
-                                    onTap: () {
-                                      FocusScope.of(context).unfocus();
-                                      _searchController.clear();
-                                      setState(() => _searchQuery = '');
-                                      _mapController.move(LatLng(s.latitude, s.longitude), 14.5);
-                                      _showStationPreview(context, s, user != null);
-                                    },
-                                  );
-                                },
+                      const SizedBox(height: 8),
+                      Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 240),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceElevated,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: AppColors.borderSubtle),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
                               ),
+                            ],
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: suggestions.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.search_off_rounded, color: AppColors.textMuted, size: 18),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'No Pune stations found matching "$_searchQuery"',
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: EdgeInsets.zero,
+                                  itemCount: suggestions.length,
+                                  separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.borderSubtle),
+                                  itemBuilder: (ctx, idx) {
+                                    final s = suggestions[idx];
+                                    final col = s.hasCurrentAqi
+                                        ? AppColors.colorForAqiCategory(s.aqiCategory)
+                                        : AppColors.aqiUnavailable;
+                                    return ListTile(
+                                      dense: true,
+                                      visualDensity: VisualDensity.compact,
+                                      leading: CircleAvatar(
+                                        radius: 13,
+                                        backgroundColor: col.withValues(alpha: 0.2),
+                                        child: Icon(Icons.location_on_rounded, color: col, size: 15),
+                                      ),
+                                      title: Text(
+                                        s.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.white),
+                                      ),
+                                      subtitle: Text(
+                                        '${s.area ?? "Pune Region"} • ${s.locationTypeLabel}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                                      ),
+                                      trailing: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: col.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: col.withValues(alpha: 0.6)),
+                                        ),
+                                        child: Text(
+                                          s.hasCurrentAqi ? '${s.aqiValue} AQI' : '–',
+                                          style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 11),
+                                        ),
+                                      ),
+                                      onTap: () => _selectStation(s, user != null),
+                                    );
+                                  },
+                                ),
+                        ),
                       ),
                     ],
 
@@ -446,7 +529,10 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
       width: 46,
       height: 46,
       child: GestureDetector(
-        onTap: () => _showStationPreview(context, station, isLoggedIn),
+        onTap: () {
+          _searchFocusNode.unfocus();
+          _showStationPreview(context, station, isLoggedIn);
+        },
         child: Container(
           decoration: BoxDecoration(
             color: color,
