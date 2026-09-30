@@ -271,7 +271,7 @@ class _PuneMapScreenState extends ConsumerState<PuneMapScreen> {
 
               // Recenter map button
               Positioned(
-                bottom: 30,
+                bottom: 96,
                 right: 16,
                 child: FloatingActionButton.small(
                   backgroundColor: AppColors.surfaceElevated,

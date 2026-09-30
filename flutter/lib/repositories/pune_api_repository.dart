@@ -639,11 +639,7 @@ class PuneApiRepository {
         debugPrint('[PuneApiRepository] Supabase direct citizen_reports error: $err');
       }
     }
-    return [
-      {'id': 'rep-1', 'ward': 'Kothrud', 'category': 'Garbage Burning', 'description': 'Biomass and waste burning reported near Paud canal.', 'status': 'Forwarded to PMC'},
-      {'id': 'rep-2', 'ward': 'Hinjawadi Phase 2', 'category': 'Construction Dust', 'description': 'Uncovered construction transport causing dust.', 'status': 'Under Inspection'},
-      {'id': 'rep-3', 'ward': 'Bhosari MIDC', 'category': 'Industrial Smoke', 'description': 'Acrid smoke odor reported during early morning.', 'status': 'MPCB Logged'},
-    ];
+    return [];
   }
 
   Future<Map<String, dynamic>> submitCitizenReport({
@@ -675,21 +671,16 @@ class PuneApiRepository {
           'latitude': lat,
           'longitude': lng,
           'status': 'verified',
-          'upvotes': 1,
+          'votes': 1,
         }).select().single();
         return Map<String, dynamic>.from(res);
       } catch (err) {
         debugPrint('[PuneApiRepository] Supabase direct submitCitizenReport error: $err');
       }
     }
-    return {
-      'id': 'rep-${DateTime.now().millisecondsSinceEpoch}',
-      'ward': ward,
-      'category': category,
-      'description': description,
-      'status': 'Received / Forwarded to PMC',
-    };
+    throw Exception('Failed to connect to Pune database. Please try again.');
   }
+
 
   Future<Map<String, dynamic>> fetchDataHealth() async {
     try {

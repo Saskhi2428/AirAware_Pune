@@ -5,6 +5,7 @@ import '../auth/forgot_password_screen.dart';
 import '../auth/login_screen.dart';
 import '../auth/signup_screen.dart';
 import '../maps/pune_map_screen.dart';
+import '../screens/splash_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/insights_screen.dart';
 import '../screens/alerts_screen.dart';
@@ -14,7 +15,7 @@ import '../screens/station_detail_screen.dart';
 import 'app_shell.dart';
 
 final appRouter = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/splash',
   redirect: (context, state) {
     // Allow seamless access to Pune air quality data without forced login
     final loggedIn = Supabase.instance.client.auth.currentSession != null;
@@ -25,8 +26,10 @@ final appRouter = GoRouter(
     return null;
   },
   routes: [
+    GoRoute(path: '/splash', builder: (context, state) => const SplashScreen()),
     GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
     GoRoute(path: '/signup', builder: (context, state) => const SignupScreen()),
+
     GoRoute(path: '/forgot-password', builder: (context, state) => const ForgotPasswordScreen()),
     GoRoute(path: '/exposure', builder: (context, state) => const ExposureScreen()),
     GoRoute(

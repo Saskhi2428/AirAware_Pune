@@ -89,19 +89,13 @@ async def readiness_check():
         return fail(f"Database connectivity check failed: {e}", status_code=503)
 
 
-# Mount the Flutter Web application if built (checks local dev path, backend bundle path, and Docker path)
-flutter_build_dir = Path(__file__).resolve().parent.parent.parent / "flutter" / "build" / "web"
-backend_web_dir = Path(__file__).resolve().parent.parent / "web_app" / "flutter"
-docker_flutter_dir = Path("/app/flutter_web")
-
-if flutter_build_dir.exists():
-    app.mount("/flutter", StaticFiles(directory=str(flutter_build_dir), html=True), name="flutter")
-elif backend_web_dir.exists():
-    app.mount("/flutter", StaticFiles(directory=str(backend_web_dir), html=True), name="flutter")
-elif docker_flutter_dir.exists():
-    app.mount("/flutter", StaticFiles(directory=str(docker_flutter_dir), html=True), name="flutter")
-
-# Mount the static directory to serve the universal Web & PWA client
-static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+@app.get("/")
+async def root():
+    """Mobile API Root Status Endpoint."""
+    return ok({
+        "service": "AirAware Pune Intelligence Platform",
+        "version": "1.0.0",
+        "target": "Mobile App API",
+        "status": "online",
+        "docs": "/docs",
+    })

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/pune_providers.dart';
 import '../theme/app_theme.dart';
@@ -15,11 +16,19 @@ class ExposureScreen extends ConsumerStatefulWidget {
 }
 
 class _ExposureScreenState extends ConsumerState<ExposureScreen> {
-  // Exposure Stopwatch
+  // Exposure Stopwatch & Live Tracking
   bool _isTracking = false;
   int _secondsElapsed = 0;
   Timer? _timer;
-  Timer? _pointTimer;
+  StreamSubscription<Position>? _positionStream;
+  Position? _lastPosition;
+  double _distanceMeters = 0.0;
+  double _currentSpeedKmh = 0.0;
+  int _currentAqi = 85;
+  String _currentStationName = 'Pune Sensor';
+  double _inhaledDoseUg = 0.0;
+  final List<int> _sampledAqis = [];
+
   String? _activeSessionId;
   String _activityMode = 'Walking'; // Walking, Running, Cycling, Driving
 
@@ -33,54 +42,216 @@ class _ExposureScreenState extends ConsumerState<ExposureScreen> {
   @override
   void dispose() {
     _timer?.cancel();
-    _pointTimer?.cancel();
+    _positionStream?.cancel();
     super.dispose();
   }
 
   Future<void> _toggleTracking() async {
     if (_isTracking) {
       _timer?.cancel();
-      _pointTimer?.cancel();
+      await _positionStream?.cancel();
+      _positionStream = null;
       setState(() => _isTracking = false);
 
       Map<String, dynamic>? finishData;
       if (_activeSessionId != null) {
-        finishData = await ref.read(puneApiRepositoryProvider).finishExposureSession(_activeSessionId!);
+        try {
+          finishData = await ref.read(puneApiRepositoryProvider).finishExposureSession(_activeSessionId!);
+        } catch (e) {
+          debugPrint('[Exposure] Error finishing session on backend: $e');
+        }
+
+        // Direct Supabase fallback update if needed
+        try {
+          final sb = Supabase.instance.client;
+          if (sb.auth.currentSession != null) {
+            final avgAqi = _sampledAqis.isNotEmpty
+                ? (_sampledAqis.reduce((a, b) => a + b) / _sampledAqis.length).round()
+                : _currentAqi;
+            final peakAqi = _sampledAqis.isNotEmpty
+                ? _sampledAqis.reduce((a, b) => a > b ? a : b)
+                : _currentAqi;
+            await sb.from('exposure_sessions').update({
+              'ended_at': DateTime.now().toUtc().toIso8601String(),
+              'duration_seconds': _secondsElapsed,
+              'avg_aqi': avgAqi,
+              'peak_aqi': peakAqi,
+              'relative_exposure_score': (_inhaledDoseUg / 5.0).clamp(1.0, 100.0).round(),
+            }).eq('id', _activeSessionId!);
+          }
+        } catch (e) {
+          debugPrint('[Exposure] Supabase direct session finish error: $e');
+        }
+
         ref.invalidate(exposureSessionsProvider);
       }
+
       _showSessionSummary(finishData);
       _activeSessionId = null;
     } else {
+      // Permission check
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+        if (perm == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Location permission is required for outdoor exposure tracking.')),
+            );
+          }
+          return;
+        }
+      }
+      if (perm == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please enable location permission in device settings.')),
+          );
+        }
+        return;
+      }
+
+      // Reset tracking metrics
       setState(() {
         _isTracking = true;
         _secondsElapsed = 0;
+        _distanceMeters = 0.0;
+        _currentSpeedKmh = 0.0;
+        _inhaledDoseUg = 0.0;
+        _lastPosition = null;
+        _sampledAqis.clear();
       });
+
       _timer = Timer.periodic(const Duration(seconds: 1), (t) {
         if (mounted) setState(() => _secondsElapsed++);
       });
 
-      // Start real backend session
-      _activeSessionId = await ref.read(puneApiRepositoryProvider).startExposureSession(activityMode: _activityMode);
+      // Start backend/Supabase exposure session
+      try {
+        _activeSessionId = await ref.read(puneApiRepositoryProvider).startExposureSession(activityMode: _activityMode);
+      } catch (e) {
+        debugPrint('[Exposure] Backend start session failed: $e');
+      }
 
-      // Periodically sample position
-      _pointTimer = Timer.periodic(const Duration(seconds: 25), (t) async {
-        if (!_isTracking || _activeSessionId == null) return;
+      // If backend was unreachable, start direct Supabase session
+      if (_activeSessionId == null) {
         try {
-          final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
-          await ref.read(puneApiRepositoryProvider).addExposurePoint(
+          final sb = Supabase.instance.client;
+          final user = sb.auth.currentUser;
+          if (user != null) {
+            final res = await sb.from('exposure_sessions').insert({
+              'user_id': user.id,
+              'started_at': DateTime.now().toUtc().toIso8601String(),
+            }).select('id').single();
+            _activeSessionId = res['id']?.toString();
+          }
+        } catch (e) {
+          debugPrint('[Exposure] Direct Supabase session creation error: $e');
+        }
+      }
+
+      // Android foreground service settings
+      final locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+        intervalDuration: const Duration(seconds: 4),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'AirAware Exposure Tracker Active',
+          notificationText: 'Tracking outdoor route and Pune air intake in real time...',
+          enableWakeLock: true,
+        ),
+      );
+
+      _positionStream = Geolocator.getPositionStream(locationSettings: locationSettings).listen((pos) {
+        if (!mounted || !_isTracking) return;
+
+        double deltaMeters = 0.0;
+        if (_lastPosition != null) {
+          deltaMeters = Geolocator.distanceBetween(
+            _lastPosition!.latitude,
+            _lastPosition!.longitude,
+            pos.latitude,
+            pos.longitude,
+          );
+        }
+        _lastPosition = pos;
+
+        // Speed in km/h
+        final speedKmh = (pos.speed * 3.6).clamp(0.0, 140.0);
+
+        // Find nearest station from stationsProvider
+        final stations = ref.read(stationsProvider).valueOrNull ?? [];
+        int nearestAqi = 85;
+        String nearestName = 'Pune Center';
+        if (stations.isNotEmpty) {
+          double minD = double.infinity;
+          for (final s in stations) {
+            final d = Geolocator.distanceBetween(pos.latitude, pos.longitude, s.latitude, s.longitude);
+            if (d < minD) {
+              minD = d;
+              nearestAqi = s.aqiValue ?? 85;
+              nearestName = s.name;
+            }
+          }
+        }
+        _sampledAqis.add(nearestAqi);
+
+        // Calculate ventilation rate (m^3/hr) based on activity and persona
+        double ventRate = 1.2;
+        if (_activityMode == 'Running') {
+          ventRate = 3.0;
+        } else if (_activityMode == 'Cycling') {
+          ventRate = 2.4;
+        } else if (_activityMode == 'Driving') {
+          ventRate = 0.6;
+        }
+
+        final persona = ref.read(activeHealthPersonaProvider);
+        if (persona.contains('Athlete')) {
+          ventRate *= 1.2;
+        }
+        if (persona.contains('Child')) {
+          ventRate *= 0.8;
+        }
+
+
+        // Inhaled particulate PM2.5 mass estimation:
+        // PM2.5 concentration approx ~ aqi * 0.6 ug/m^3
+        final pm25ugM3 = (nearestAqi * 0.6).clamp(10.0, 450.0);
+        // Dosage for 4 seconds interval:
+        final incrementalDose = (ventRate / 3600.0) * 4.0 * pm25ugM3;
+
+        setState(() {
+          _distanceMeters += deltaMeters;
+          _currentSpeedKmh = speedKmh;
+          _currentAqi = nearestAqi;
+          _currentStationName = nearestName;
+          _inhaledDoseUg += incrementalDose;
+        });
+
+        // Record breadcrumb point
+        if (_activeSessionId != null) {
+          ref.read(puneApiRepositoryProvider).addExposurePoint(
             sessionId: _activeSessionId!,
             latitude: pos.latitude,
             longitude: pos.longitude,
           );
-        } catch (_) {}
+        }
       });
     }
   }
 
   void _showSessionSummary([Map<String, dynamic>? finishData]) {
-    final avgAqi = finishData?['avg_aqi']?.toString() ?? '82.0';
-    final peakAqi = finishData?['peak_aqi']?.toString() ?? '105.0';
-    final doseScore = finishData?['relative_exposure_score']?.toString() ?? '12';
+    final avgAqi = finishData?['avg_aqi']?.toString() ??
+        (_sampledAqis.isNotEmpty
+            ? (_sampledAqis.reduce((a, b) => a + b) / _sampledAqis.length).round().toString()
+            : '$_currentAqi');
+    final peakAqi = finishData?['peak_aqi']?.toString() ??
+        (_sampledAqis.isNotEmpty
+            ? _sampledAqis.reduce((a, b) => a > b ? a : b).toString()
+            : '$_currentAqi');
+    final doseScore = finishData?['relative_exposure_score']?.toString() ??
+        (_inhaledDoseUg / 5.0).clamp(1.0, 100.0).round().toString();
 
     showDialog(
       context: context,
@@ -93,7 +264,8 @@ class _ExposureScreenState extends ConsumerState<ExposureScreen> {
           children: [
             Text('Activity: $_activityMode', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text('Duration: ${_formatDuration(_secondsElapsed)}', style: const TextStyle(color: AppColors.textSecondary)),
+            Text('Duration: ${_formatDuration(_secondsElapsed)} • Distance: ${(_distanceMeters / 1000).toStringAsFixed(2)} km',
+                style: const TextStyle(color: AppColors.textSecondary)),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(12),
@@ -107,7 +279,7 @@ class _ExposureScreenState extends ConsumerState<ExposureScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('$avgAqi AQI (Peak $peakAqi)', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
-                        const Text('Average Route Air Quality', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                        Text('Inhaled: ${_inhaledDoseUg.toStringAsFixed(1)} µg PM2.5', style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
                       ],
                     ),
                   ),
@@ -137,6 +309,7 @@ class _ExposureScreenState extends ConsumerState<ExposureScreen> {
     final s = (totalSeconds % 60).toString().padLeft(2, '0');
     return '$m:$s';
   }
+
 
   Future<void> _calculateCommute() async {
     setState(() => _calculatingRoute = true);
@@ -201,12 +374,82 @@ class _ExposureScreenState extends ConsumerState<ExposureScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   Text(
                     _formatDuration(_secondsElapsed),
                     style: const TextStyle(fontSize: 54, fontWeight: FontWeight.w800, letterSpacing: 2, color: Colors.white),
                   ),
-                  const SizedBox(height: 12),
+                  if (_isTracking) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.indigo.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text('Distance', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                                const SizedBox(height: 2),
+                                Text('${(_distanceMeters / 1000).toStringAsFixed(2)} km',
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)),
+                              ],
+                            ),
+                          ),
+                          Container(width: 1, height: 24, color: AppColors.borderSubtle),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text('Speed', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                                const SizedBox(height: 2),
+                                Text('${_currentSpeedKmh.toStringAsFixed(1)} km/h',
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.violet)),
+                              ],
+                            ),
+                          ),
+                          Container(width: 1, height: 24, color: AppColors.borderSubtle),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text('Ambient AQI', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                                const SizedBox(height: 2),
+                                Text('$_currentAqi AQI',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13,
+                                      color: AppColors.colorForAqiCategory(_currentAqi > 100 ? 'Moderate' : 'Satisfactory'),
+                                    )),
+                                Text(
+                                  _currentStationName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          Container(width: 1, height: 24, color: AppColors.borderSubtle),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text('Inhaled Dose', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                                const SizedBox(height: 2),
+                                Text('${_inhaledDoseUg.toStringAsFixed(1)} µg',
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.aqiPoor)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+
                   // Activity mode selector
                   Wrap(
                     alignment: WrapAlignment.center,

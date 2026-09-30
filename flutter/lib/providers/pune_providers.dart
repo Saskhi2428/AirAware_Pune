@@ -5,8 +5,10 @@ import 'package:geolocator/geolocator.dart';
 import '../auth/auth_state_provider.dart';
 import '../models/station.dart';
 import '../repositories/pune_api_repository.dart';
+import '../services/notification_service.dart';
 
 final puneApiRepositoryProvider = Provider<PuneApiRepository>((ref) => PuneApiRepository());
+
 
 /// Auto-refreshing station list
 class StationsNotifier extends AsyncNotifier<List<Station>> {
@@ -105,6 +107,35 @@ final userNearestStationProvider = FutureProvider.autoDispose<Map<String, dynami
   final lat = pos?.latitude ?? 18.5204;
   final lng = pos?.longitude ?? 73.8567;
   final result = await ref.watch(puneApiRepositoryProvider).fetchNearestStation(lat, lng);
+
+  // Real-time threshold check & Android notification trigger
+  try {
+    final st = result['nearest_station'] as Map<String, dynamic>?;
+    if (st != null && st['aqi_value'] != null) {
+      final aqi = (st['aqi_value'] as num).toInt();
+      final name = st['name']?.toString() ?? 'Pune Station';
+      final dominant = st['dominant_pollutant']?.toString();
+
+      final alerts = ref.read(userAlertsProvider).valueOrNull ?? [];
+      double threshold = 150.0;
+      for (final a in alerts) {
+        if (a['is_enabled'] != false && a['threshold_value'] != null) {
+          threshold = (a['threshold_value'] as num).toDouble();
+          break;
+        }
+      }
+
+      NotificationService.instance.checkThresholdAndNotify(
+        currentAqi: aqi,
+        thresholdAqi: threshold,
+        stationName: name,
+        dominantPollutant: dominant,
+      );
+    }
+  } catch (e) {
+    debugPrint('[userNearestStationProvider] Threshold check error: $e');
+  }
+
   return {
     ...result,
     'is_gps': isGps,
@@ -175,11 +206,19 @@ class CitizenReportsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     }
   }
 
-  Future<void> submitReport(String ward, String category, String description) async {
+  Future<void> submitReport(
+    String ward,
+    String category,
+    String description, {
+    double? latitude,
+    double? longitude,
+  }) async {
     await ref.read(puneApiRepositoryProvider).submitCitizenReport(
       ward: ward,
       category: category,
       description: description,
+      lat: latitude ?? 18.5204,
+      lng: longitude ?? 73.8567,
     );
     state = AsyncData(await ref.read(puneApiRepositoryProvider).fetchCitizenReports());
   }
@@ -191,6 +230,7 @@ class CitizenReportsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
 }
 
 final citizenReportsProvider = AsyncNotifierProvider<CitizenReportsNotifier, List<Map<String, dynamic>>>(
+
   CitizenReportsNotifier.new,
 );
 

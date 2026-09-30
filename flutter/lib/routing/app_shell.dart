@@ -28,20 +28,6 @@ class AppShell extends StatelessWidget {
 
     return GradientScaffold(
       body: child,
-      floatingActionButton: Container(
-        decoration: BoxDecoration(
-          gradient: AppColors.brandGradient(),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [BoxShadow(color: AppColors.indigo.withValues(alpha: 0.45), blurRadius: 20, offset: const Offset(0, 8))],
-        ),
-        child: FloatingActionButton.extended(
-          onPressed: () => context.push('/exposure'),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          icon: const Icon(Icons.directions_walk_rounded, color: Colors.white),
-          label: const Text('Exposure Mode', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        ),
-      ),
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Container(

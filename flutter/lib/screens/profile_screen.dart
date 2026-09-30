@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../auth/auth_service.dart';
 import '../auth/auth_state_provider.dart';
 import '../providers/pune_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/gradient_scaffold.dart';
+
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -22,8 +25,98 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _spikeAlerts = true;
   bool _asthmaSensitivity = false;
   bool _outdoorAthlete = true;
+  void _showEditProfileDialog(BuildContext context, User user) {
+
+    final currentName = user.userMetadata?['full_name'] as String? ??
+        (user.email?.split('@')[0].replaceAll('.', ' ') ?? 'Pune Citizen');
+    final nameCtrl = TextEditingController(text: currentName);
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: AppColors.surfaceElevated,
+          title: const Text('Edit Profile', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                  labelStyle: TextStyle(color: AppColors.textMuted),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Account Email: ${user.email ?? ""}',
+                style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      final newName = nameCtrl.text.trim();
+                      if (newName.isEmpty) return;
+
+                      setDlgState(() => isSaving = true);
+                      try {
+                        final sb = Supabase.instance.client;
+                        await sb.from('profiles').upsert({
+                          'id': user.id,
+                          'full_name': newName,
+                          'email': user.email ?? '',
+                          'updated_at': DateTime.now().toUtc().toIso8601String(),
+                        });
+
+                        await sb.auth.updateUser(
+                          UserAttributes(data: {'full_name': newName}),
+                        );
+
+                        ref.invalidate(currentUserProvider);
+
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Profile updated successfully!'),
+                              backgroundColor: AppColors.indigo,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setDlgState(() => isSaving = false);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Update error: $e')),
+                          );
+                        }
+                      }
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.indigo),
+              child: isSaving
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Save Changes', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   void _confirmSignOut(BuildContext context) {
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -311,10 +404,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ],
                       ),
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_note_rounded, color: AppColors.violet, size: 24),
+                      tooltip: 'Edit Profile Name',
+                      onPressed: () => _showEditProfileDialog(context, user),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
+
 
               // SAVED PLACES MANAGEMENT (Strictly authenticated user data)
               GlassCard(
@@ -445,14 +544,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             selected: isSelected,
                             selectedColor: AppColors.indigo,
                             backgroundColor: AppColors.surfaceElevated,
-                            onSelected: (val) {
+                            onSelected: (val) async {
                               if (val) {
                                 ref.read(activeHealthPersonaProvider.notifier).state = p;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Health persona switched to $p')),
-                                );
+                                if (user != null) {
+                                  try {
+                                    final sb = Supabase.instance.client;
+                                    await sb.from('user_preferences').upsert({
+                                      'user_id': user.id,
+                                      'health_persona': p.toLowerCase().replaceAll(' ', '_'),
+                                      'updated_at': DateTime.now().toUtc().toIso8601String(),
+                                    });
+                                  } catch (e) {
+                                    debugPrint('[Profile] user_preferences upsert error: $e');
+                                  }
+                                }
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Health persona switched to $p')),
+                                  );
+                                }
                               }
                             },
+
                           );
                         }).toList(),
                       ),

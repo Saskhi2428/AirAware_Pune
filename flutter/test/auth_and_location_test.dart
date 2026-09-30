@@ -80,7 +80,7 @@ void main() {
       final repo = PuneApiRepository();
       final reports = await repo.fetchCitizenReports();
       expect(reports, isA<List>());
-      expect(reports.isNotEmpty, isTrue);
     });
+
   });
 }

@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_state_provider.dart';
 import '../providers/pune_providers.dart';
+import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/gradient_scaffold.dart';
+
 
 class AlertsScreen extends ConsumerStatefulWidget {
   const AlertsScreen({super.key});
@@ -178,29 +180,73 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                         onChanged: (v) => setState(() => _eveningCommute = v),
                       ),
                       const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            await ref.read(userAlertsProvider.notifier).saveAlert(
-                              thresholdValue: _thresholdAqi,
-                            );
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Threshold trigger saved: Alert if AQI > ${_thresholdAqi.round()}'),
-                                  backgroundColor: AppColors.indigo,
-                                ),
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.check_circle_outline_rounded, size: 16, color: Colors.white),
-                          label: const Text('Save Alert Trigger', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.indigo,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                await ref.read(userAlertsProvider.notifier).saveAlert(
+                                  thresholdValue: _thresholdAqi,
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Threshold saved: Alert when AQI > ${_thresholdAqi.round()}'),
+                                      backgroundColor: AppColors.indigo,
+                                    ),
+                                  );
+                                }
+
+                                // Check current station against saved threshold immediately
+                                final nearestData = ref.read(userNearestStationProvider).valueOrNull;
+                                final st = nearestData?['nearest_station'] as Map<String, dynamic>?;
+                                if (st != null && st['aqi_value'] != null) {
+                                  final aqi = (st['aqi_value'] as num).toInt();
+                                  final name = st['name']?.toString() ?? 'Pune';
+                                  if (aqi >= _thresholdAqi) {
+                                    await NotificationService.instance.showAqiAlert(
+                                      title: '⚠️ Alert: $name AQI is $aqi',
+                                      body: 'Ambient AQI at $name ($aqi) already exceeds your safety threshold of ${_thresholdAqi.round()} AQI.',
+                                      aqi: aqi,
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.check_circle_outline_rounded, size: 16, color: Colors.white),
+                              label: const Text('Save Trigger', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.indigo,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 10),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              await NotificationService.instance.showAqiAlert(
+                                title: '🔔 AirAware Pune: Test Alert',
+                                body: 'Live local notification verified! You will receive push alerts when Pune AQI exceeds ${_thresholdAqi.round()}.',
+                                aqi: _thresholdAqi.round(),
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Test notification dispatched to Android notification tray.'),
+                                    backgroundColor: AppColors.surfaceElevated,
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.notifications_active_outlined, size: 16, color: AppColors.violet),
+                            label: const Text('Test Alert', style: TextStyle(color: AppColors.violet, fontWeight: FontWeight.w700)),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppColors.borderSubtle),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -234,12 +280,50 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                     child: CircularProgressIndicator(color: AppColors.indigo),
                   ),
                 ),
-                error: (e, _) => Text('Error loading reports: $e', style: const TextStyle(color: AppColors.textMuted)),
+                error: (e, _) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text('Error loading reports: $e', style: const TextStyle(color: AppColors.textMuted)),
+                  ),
+                ),
                 data: (reports) {
                   if (reports.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Center(child: Text('No citizen incidents reported in the last 24 hours.', style: TextStyle(color: AppColors.textMuted, fontSize: 13))),
+                    return GlassCard(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: AppColors.aqiGood.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.verified_rounded, color: AppColors.aqiGood, size: 26),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'No Active Pollution Incidents',
+                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Colors.white),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'The citizen watch feed is clean in your area right now. If you observe garbage burning, construction dust, or industrial emissions, report it below to alert Pune citizens and authorities.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.4),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () => _showReportDialog(context, user != null),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.indigo,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            icon: const Icon(Icons.report_gmailerrorred_rounded, size: 16, color: Colors.white),
+                            label: const Text('Report Incident Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                          ),
+                        ],
+                      ),
                     );
                   }
                   return Column(
@@ -248,7 +332,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                       final ward = r['ward'] ?? 'Pune';
                       final cat = r['category'] ?? 'Smoke/Dust';
                       final desc = r['description'] ?? '';
-                      final status = r['status'] ?? 'Received';
+                      final status = r['status'] ?? 'Under Review';
                       final votes = r['votes'] ?? 1;
 
                       return Padding(
@@ -296,6 +380,14 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                                     onTap: () async {
                                       if (reportId.isNotEmpty) {
                                         await ref.read(citizenReportsProvider.notifier).voteReport(reportId);
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Thank you! Incident confirmed with your upvote.'),
+                                              duration: Duration(seconds: 2),
+                                            ),
+                                          );
+                                        }
                                       }
                                     },
                                     child: Container(
@@ -335,6 +427,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     final wardCtrl = TextEditingController(text: 'Kothrud');
     final descCtrl = TextEditingController();
     String category = 'Garbage Burning';
+    bool isSubmitting = false;
 
     showDialog(
       context: context,
@@ -374,27 +467,59 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
               child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
-              onPressed: () {
-                ref.read(citizenReportsProvider.notifier).submitReport(
-                  wardCtrl.text.trim(),
-                  category,
-                  descCtrl.text.trim(),
-                );
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Incident reported and forwarded to PMC authorities.')),
-                );
-              },
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      final ward = wardCtrl.text.trim();
+                      final desc = descCtrl.text.trim();
+                      if (ward.isEmpty || desc.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please provide area and description.')),
+                        );
+                        return;
+                      }
+
+                      setDlgState(() => isSubmitting = true);
+                      try {
+                        final pos = ref.read(deviceLocationProvider).valueOrNull;
+                        await ref.read(citizenReportsProvider.notifier).submitReport(
+                          ward,
+                          category,
+                          desc,
+                          latitude: pos?.latitude,
+                          longitude: pos?.longitude,
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Incident reported and submitted to Pune database.'),
+                              backgroundColor: AppColors.indigo,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setDlgState(() => isSubmitting = false);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Submission error: $e')),
+                          );
+                        }
+                      }
+                    },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.indigo),
-              child: const Text('Submit', style: TextStyle(color: Colors.white)),
+              child: isSubmitting
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Submit', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
       ),
     );
   }
+
 }

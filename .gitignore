@@ -1,4 +1,4 @@
-﻿# Environment files
+# Environment files
 .env
 *.env
 !.env.example
@@ -16,3 +16,7 @@ build/
 # IDE
 .vscode/
 .idea/
+
+# Safe trash
+trash/
+

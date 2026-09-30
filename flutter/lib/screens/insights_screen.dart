@@ -34,19 +34,26 @@ class InsightsScreen extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 100),
             children: [
-              // 1. XGBOOST 24-HOUR PROBABILISTIC FORECAST
+              // 1. DATA-DRIVEN DIURNAL ANALYSIS & DOMINANT POLLUTANTS
+              const _DiurnalTrendCard(),
+              const SizedBox(height: 16),
+
+              // 2. XGBOOST 24-HOUR PROBABILISTIC FORECAST
               forecastAsync.when(
                 loading: () => const GlassCard(
                   child: SizedBox(height: 220, child: Center(child: CircularProgressIndicator(color: AppColors.indigo))),
                 ),
-                error: (err, _) => GlassCard(
-                  child: Text('Forecast unavailable: $err', style: const TextStyle(color: AppColors.textMuted)),
+                error: (err, _) => const GlassCard(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text('Not enough historical telemetry to generate forecast curve.', style: TextStyle(color: AppColors.textMuted)),
+                  ),
                 ),
                 data: (forecast) => _ForecastCard(forecast: forecast),
               ),
               const SizedBox(height: 16),
 
-              // 2. FEATURE ATTRIBUTION (SHAP EXPLAINABILITY)
+              // 3. FEATURE ATTRIBUTION (SHAP EXPLAINABILITY)
               explainAsync.when(
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
@@ -54,7 +61,7 @@ class InsightsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // 3. DBSCAN DETECTED SPATIAL HOTSPOTS
+              // 4. DBSCAN DETECTED SPATIAL HOTSPOTS
               hotspotsAsync.when(
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
@@ -62,7 +69,7 @@ class InsightsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // 4. SENSOR TELEMETRY & ANOMALIES
+              // 5. SENSOR TELEMETRY & ANOMALIES
               anomaliesAsync.when(
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
@@ -70,11 +77,166 @@ class InsightsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // 5. DATA HEALTH & PROVENANCE DIAGNOSTICS
+              // 6. DATA HEALTH & PROVENANCE DIAGNOSTICS
               const _DataHealthCenterCard(),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DiurnalTrendCard extends ConsumerWidget {
+  const _DiurnalTrendCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stations = ref.watch(stationsProvider).valueOrNull ?? [];
+    final pulse = ref.watch(punePulseProvider).valueOrNull;
+
+    if (stations.isEmpty) {
+      return const GlassCard(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(Icons.info_outline_rounded, color: AppColors.textMuted, size: 28),
+            SizedBox(height: 8),
+            Text('Not enough data to calculate diurnal trend', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    // Tally dominant pollutants across stations
+    final pollutantCounts = <String, int>{};
+    for (final s in stations) {
+      final p = (s.dominantPollutant ?? 'PM2.5').toUpperCase();
+      pollutantCounts[p] = (pollutantCounts[p] ?? 0) + 1;
+    }
+    String topPollutant = 'PM2.5';
+    int topCount = 0;
+    pollutantCounts.forEach((k, v) {
+      if (v > topCount) {
+        topCount = v;
+        topPollutant = k;
+      }
+    });
+
+    final pctDominant = ((topCount / stations.length) * 100).round();
+
+    // Cleanest & most polluted
+    final activeWithAqi = stations.where((s) => s.hasCurrentAqi).toList();
+    activeWithAqi.sort((a, b) => (a.aqiValue ?? 0).compareTo(b.aqiValue ?? 0));
+
+    final cleanest = activeWithAqi.isNotEmpty ? activeWithAqi.first : null;
+    final worst = activeWithAqi.isNotEmpty ? activeWithAqi.last : null;
+
+    final optWindows = pulse?['optimal_windows'] as List?;
+    final bestTime = optWindows != null && optWindows.isNotEmpty
+        ? (optWindows[0]['recommended_time']?.toString() ?? '05:30 - 07:30 AM')
+        : '05:30 - 07:30 AM';
+
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Diurnal Trends & Dominant Pollutants', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                  SizedBox(height: 2),
+                  Text('Real-time analysis across 49 Pune monitoring stations', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: AppColors.indigo.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+                child: const Text('LIVE TELEMETRY', style: TextStyle(color: AppColors.violet, fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: AppColors.surfaceElevated, borderRadius: BorderRadius.circular(12)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Dominant Pollutant', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                      const SizedBox(height: 4),
+                      Text(topPollutant, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.violet)),
+                      const SizedBox(height: 2),
+                      Text('$pctDominant% of Pune stations', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: AppColors.surfaceElevated, borderRadius: BorderRadius.circular(12)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Best Diurnal Window', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                      const SizedBox(height: 4),
+                      Text(bestTime, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.aqiGood)),
+                      const SizedBox(height: 2),
+                      const Text('Lowest commute particulate', style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          if (cleanest != null && worst != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: AppColors.surfaceElevated, borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Lowest AQI (Cleanest)', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                        const SizedBox(height: 2),
+                        Text('${cleanest.name} • ${cleanest.aqiValue} AQI',
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.aqiGood)),
+                      ],
+                    ),
+                  ),
+                  Container(width: 1, height: 26, color: AppColors.borderSubtle),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Highest AQI (Peak)', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                        const SizedBox(height: 2),
+                        Text('${worst.name} • ${worst.aqiValue} AQI',
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.aqiPoor)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -89,6 +251,26 @@ class _ForecastCard extends StatelessWidget {
     final milestones = forecast['milestones'] as Map<String, dynamic>? ?? {};
     final hourly = (forecast['hourly_forecast'] as List?) ?? [];
     final advisory = forecast['advisory'] as Map<String, dynamic>? ?? {};
+
+    if (hourly.isEmpty) {
+      return const GlassCard(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Icon(Icons.show_chart_rounded, color: AppColors.violet, size: 36),
+            SizedBox(height: 10),
+            Text('Awaiting 24h Diurnal Pass', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            SizedBox(height: 4),
+            Text(
+              'Not enough data for this Pune station yet. XGBoost forecast curve requires at least 12 consecutive hourly observations.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      );
+    }
+
 
     // Prepare chart spots
     final spots = <FlSpot>[];

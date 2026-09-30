@@ -57,7 +57,10 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
     try {
       final repo = ref.read(puneApiRepositoryProvider);
-      final resp = await repo.askAiAssistant(text, locality: widget.initialLocality);
+      final persona = ref.read(activeHealthPersonaProvider);
+      final contextualPrompt = '$text (User Health Persona: $persona in Pune)';
+      final resp = await repo.askAiAssistant(contextualPrompt, locality: widget.initialLocality);
+
 
       if (mounted) {
         setState(() {
@@ -291,8 +294,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
           // Input Bar
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + MediaQuery.of(context).padding.bottom),
             child: Row(
+
               children: [
                 Expanded(
                   child: TextField(

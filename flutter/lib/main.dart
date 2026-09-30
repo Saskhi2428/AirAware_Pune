@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/env.dart';
 import 'routing/app_router.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -18,8 +19,11 @@ Future<void> main() async {
     anonKey: Env.supabaseAnonKey,
   );
 
+  await NotificationService.instance.initialize();
+
   runApp(const ProviderScope(child: AiraWareApp()));
 }
+
 
 class AiraWareApp extends StatelessWidget {
   const AiraWareApp({super.key});
